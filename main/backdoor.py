@@ -31,14 +31,14 @@ def node_level_trigger(args, benign_data):
     for i in train_node_index:
         bkd_data.labels[i] = args.backdoor_target_label
         for j in feature_index:
-            bkd_data.features[i, j] = trigger_value
+            bkd_data.features[i, j] = random.random()
     
     for i in test_node_index:
         bkd_data.labels[i] = args.backdoor_target_label
         for j in feature_index:
-            bkd_data.features[i, j] = trigger_value
+            bkd_data.features[i, j] = random.random()
     
-    return bkd_data, test_node_index
+    return bkd_data, train_node_index, test_node_index
 
 
 def train_bkd_model(args, bkd_data, test_node_index, benign_model):
@@ -106,11 +106,11 @@ def test_performance(args, bkd_data, emb_model, clf_model, bkd_test_node_index):
         clean_test_node_index.remove(i)
 
     emb_model.eval()
-    clf_model.eval()
+    #clf_model.eval()
     predict_fn = lambda output: output.max(1, keepdim=True)[1]
     input_data = bkd_data.features.to(device), bkd_data.adjacency.to(device)
-    embeddings = emb_model(input_data)
-    outputs = clf_model(embeddings.detach())
+    embeddings, outputs = emb_model(input_data)
+    #outputs = clf_model(embeddings.detach())
     pred = predict_fn(outputs)
 
     clean_correct_num, bkd_correct_num = 0, 0
@@ -127,7 +127,11 @@ def test_performance(args, bkd_data, emb_model, clf_model, bkd_test_node_index):
 
 
 def run(args, benign_data, benign_model):
-    bkd_data, bkd_test_node_index = node_level_trigger(args, benign_data)
+    bkd_data, bkd_train_node_index, bkd_test_node_index = node_level_trigger(args, benign_data)
     bkd_model = train_bkd_model(args, bkd_data, bkd_test_node_index, benign_model)
     
-    return bkd_data, bkd_model, bkd_test_node_index
+    return bkd_data, bkd_model, bkd_train_node_index, bkd_test_node_index
+
+
+if __name__ == '__main__':
+    pass

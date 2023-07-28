@@ -17,6 +17,9 @@ def add_benign_model_group(group):
     group.add_argument('--benign_weight_decay', type=float, default=5e-4)
     group.add_argument('--benign_dropout', type=float, default=0.5)
 
+    group.add_argument('--benign_train_method', type=str, default='normal')
+    group.add_argument('--antidistill_train_ratio', type=float, default=0.1)
+
 
 def add_atk_group(group):
     group.add_argument('--backdoor_train_node_ratio', type=float, default=0.15)
@@ -41,6 +44,10 @@ def add_extraction_model_group(group):
     group.add_argument('--extraction_lr_decay_steps', nargs='+', default=[500, 800], type=int)
     group.add_argument('--extraction_weight_decay', type=float, default=5e-4)
     group.add_argument('--extraction_dropout', type=float, default=0.5)
+
+    group.add_argument('--extraction_type', type=str, default='partial')
+    group.add_argument('--extraction_method', type=str, default='black_box')
+    group.add_argument('--extraction_ratio', type=float, default=0.5)
 
 
 def parse_args():

@@ -12,6 +12,7 @@ class SageEmb(torch.nn.Module):
         for i in range(len(hidden_dim) - 1):
             self.layers.append(nn.SAGEConv(hidden_dim[i], hidden_dim[i+1]))
         
+        self.fc = nn.Linear(hidden_dim[-1], out_dim)
         #self.project_layer = nn.Linear(hidden_dim[-1], out_dim)
 
     def forward(self, data):
@@ -21,5 +22,6 @@ class SageEmb(torch.nn.Module):
             x = F.relu(x)
         #x = self.project_layer(x)
         embedding = x
+        x = self.fc(x)
 
-        return embedding
+        return embedding, F.log_softmax(x, dim=1)

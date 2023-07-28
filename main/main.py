@@ -9,8 +9,8 @@ from utils.config import parse_args
 
 def ownver(args):
     graph_data, benign_model = benign.run(args)
-    bkd_data, bkd_model, bkd_test_node_index = backdoor.run(args, graph_data, benign_model)
-    extraction_emb_model, extraction_clf_model = extraction.run(args, bkd_data, bkd_model)
+    bkd_data, bkd_model, bkd_train_node_index, bkd_test_node_index = backdoor.run(args, graph_data, benign_model)
+    extraction_emb_model, extraction_clf_model = extraction.run(args, graph_data, bkd_model)
     backdoor.test_performance(args, bkd_data, extraction_emb_model, extraction_clf_model, bkd_test_node_index)
 
 

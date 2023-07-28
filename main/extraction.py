@@ -16,13 +16,12 @@ class Classification(torch.nn.Module):
     def __init__(self, emb_size, num_classes):
         super(Classification, self).__init__()
 
-        self.fc1 = torch.nn.Linear(emb_size, num_classes)
-        #self.fc2 = torch.nn.Linear(256, num_classes)
+        self.fc1 = torch.nn.Linear(emb_size, 256)
+        self.fc2 = torch.nn.Linear(256, num_classes)
 
     def forward(self, x):
-        #x = F.relu(self.fc1(x))
-        x = self.fc1(x)
-        return F.log_softmax(x, dim=1)
+        x = F.relu(self.fc1(x))
+        return F.log_softmax(self.fc2(x), dim=1)
     
 
 def split_subset(node_index, split_ratio):
@@ -66,55 +65,84 @@ def train_surrogate_model(args, data):
 
     #prepare model
     in_dim = graph_data.feat_dim
-    out_dim = train_emb.shape[1]
-    
+    if args.extraction_method == 'white_box':
+        out_dim = train_emb.shape[1]
+    elif args.extraction_method == 'black_box':
+        out_dim = train_outputs.shape[1]
 
-    surrogate_model = SageEmb(in_dim, train_emb.shape[1], hidden_dim=args.extraction_hidden_dim, dropout=args.extraction_dropout)
+    surrogate_model = SageEmb(in_dim, out_dim, hidden_dim=args.extraction_hidden_dim, dropout=args.extraction_dropout)
     surrogate_model = surrogate_model.to(device)
 
     loss_fcn = torch.nn.MSELoss()
-    loss_clf = torch.nn.MSELoss()
+    loss_clf = torch.nn.CrossEntropyLoss()
 
-    optimizer_embbeding = torch.optim.Adam(surrogate_model.parameters(), lr=args.extraction_lr, weight_decay=args.extraction_weight_decay, betas=(0.5, 0.999))
+    optimizer_embedding = torch.optim.Adam(surrogate_model.parameters(), lr=args.extraction_lr, weight_decay=args.extraction_weight_decay, betas=(0.5, 0.999))
+    scheduler_embedding = lr_scheduler.MultiStepLR(optimizer_embedding, args.extraction_lr_decay_steps, gamma=0.1)
 
-    clf = Classification(out_dim, graph_data.class_num)
-    clf = clf.to(device)
+    clf = None
+    if args.extraction_method == 'white_box':
+        clf = Classification(out_dim, graph_data.class_num)
+        clf = clf.to(device)
+        optimizer_classification = torch.optim.SGD(clf.parameters(), lr=args.extraction_lr)
+        scheduler_classification = lr_scheduler.MultiStepLR(optimizer_classification, args.extraction_lr_decay_steps, gamma=0.1)
+    elif args.extraction_method == 'black_box':
+        clf = None
     predict_fn = lambda output: output.max(1, keepdim=True)[1]
-    optimizer_classification = torch.optim.SGD(clf.parameters(), lr=args.extraction_lr)
-    scheduler_classification = lr_scheduler.MultiStepLR(optimizer_classification, args.extraction_lr_decay_steps, gamma=0.1)
+    
 
     print('Model Extracting')
     for epoch in tqdm(range(args.extraction_train_epochs)):
         surrogate_model.train()
-        clf.train()
+        #clf.train()
 
         train_emb = train_emb.to(device)
         train_outputs = train_outputs.to(device)
-        optimizer_embbeding.zero_grad()
         input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-        surrogate_embeddings = surrogate_model(input_data)
+        surrogate_embeddings, surrogate_outputs = surrogate_model(input_data)
         part_embeddings = surrogate_embeddings[surrogate_train_index]
-        loss_emb = loss_fcn(part_embeddings, train_emb)
-        loss_emb.backward()
-        optimizer_embbeding.step()
-        scheduler_classification.step()
+        part_outputs = surrogate_outputs[surrogate_train_index]
+        
+        if args.extraction_method == 'white_box':
+            optimizer_embedding.zero_grad()
+            optimizer_classification.zero_grad()
+            loss_emb = torch.sqrt(loss_fcn(part_embeddings, train_emb))
+            loss_emb.backward()
+            optimizer_embedding.step()
+            scheduler_embedding.step()
 
-        optimizer_classification.zero_grad()
-        logists = clf(part_embeddings.detach())
+            outputs = clf(part_embeddings.detach())
+            train_labels = predict_fn(train_outputs)
+            train_labels = torch.flatten(train_labels)
+            loss_out = loss_clf(outputs, train_labels)
+            loss_out.backward()
+            optimizer_classification.step()
+            scheduler_classification.step()
+        elif args.extraction_method == 'black_box':
+            optimizer_embedding.zero_grad()
+            if args.extraction_type == 'full':
+                loss_emb = loss_fcn(part_outputs, train_outputs)
+                loss_emb.backward()
+            elif args.extraction_type == 'partial':
+                distill_loss = loss_fcn(part_outputs, train_outputs)
+                labels = graph_data.labels[surrogate_train_index]
 
-        loss_pred = loss_clf(logists, train_outputs)
-        loss_pred.backward()
-        optimizer_classification.step()
+                classify_loss = loss_clf(part_outputs, labels)
+                total_loss = args.extraction_ratio * distill_loss + (1.0-args.extraction_ratio) * classify_loss
+                total_loss.backward()
+            optimizer_embedding.step()
+            scheduler_embedding.step()
 
         if (epoch + 1) % 100 == 0:
             surrogate_model.eval()
-            clf.eval()
+            if args.extraction_method == 'white_box':
+                clf.eval()
 
             acc_correct = 0
             fide_correct = 0
 
-            embeddings = surrogate_model(input_data)
-            outputs = clf(embeddings.detach())
+            embeddings, outputs = surrogate_model(input_data)
+            if args.extraction_method == 'white_box':
+                outputs = clf(embeddings.detach())
             pred = predict_fn(outputs)
             test_labels = predict_fn(test_outputs)
             
