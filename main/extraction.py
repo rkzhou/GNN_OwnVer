@@ -1,6 +1,3 @@
-import sys, os
-sys.path.append(os.path.abspath('..'))
-
 import torch
 import random
 import math
@@ -22,19 +19,9 @@ class Classification(torch.nn.Module):
     def forward(self, x):
         x = F.relu(self.fc1(x))
         return F.log_softmax(self.fc2(x), dim=1)
-    
-
-def split_subset(node_index, split_ratio):
-    temp_index = copy.deepcopy(node_index)
-    random.shuffle(temp_index)
-    subset_num = math.floor(len(node_index) * split_ratio)
-    extraction_train_nodes_index = temp_index[:subset_num]
-    extraction_test_nodes_index = temp_index[subset_num:]
-    
-    return extraction_train_nodes_index, extraction_test_nodes_index
 
 
-def evaluate_target_response(model, graph_data, eval_nodes_index, response:str):
+def evaluate_target_response(graph_data, model, response:str):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -48,16 +35,20 @@ def evaluate_target_response(model, graph_data, eval_nodes_index, response:str):
     embedding = embedding.detach()
     output = output.detach()
 
-    if response == 'embeddings':
-        target_response = embedding[eval_nodes_index]
-    elif response == 'outputs':
-        target_response = output[eval_nodes_index]
+    if response == 'train_embeddings':
+        target_response = embedding[graph_data.extraction_train_nodes_index]
+    elif response == 'train_outputs':
+        target_response = output[graph_data.extraction_train_nodes_index]
+    elif response == 'test_embeddings':
+        target_response = embedding[graph_data.test_nodes_index]
+    elif response == 'test_outputs':
+        target_response = output[graph_data.test_nodes_index]
         
     return target_response
 
 
 def train_surrogate_model(args, data):
-    graph_data, surrogate_train_index, surrogate_test_index, train_emb, train_outputs, test_outputs = data
+    graph_data, train_emb, train_outputs, test_outputs = data
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -91,16 +82,15 @@ def train_surrogate_model(args, data):
     
 
     print('Model Extracting')
+    surrogate_model.train()
     for epoch in tqdm(range(args.extraction_train_epochs)):
-        surrogate_model.train()
         #clf.train()
-
         train_emb = train_emb.to(device)
         train_outputs = train_outputs.to(device)
         input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
         surrogate_embeddings, surrogate_outputs = surrogate_model(input_data)
-        part_embeddings = surrogate_embeddings[surrogate_train_index]
-        part_outputs = surrogate_outputs[surrogate_train_index]
+        part_embeddings = surrogate_embeddings[graph_data.extraction_train_nodes_index]
+        part_outputs = surrogate_outputs[graph_data.extraction_train_nodes_index]
         
         if args.extraction_method == 'white_box':
             optimizer_embedding.zero_grad()
@@ -124,7 +114,7 @@ def train_surrogate_model(args, data):
                 loss_emb.backward()
             elif args.extraction_type == 'partial':
                 distill_loss = loss_fcn(part_outputs, train_outputs)
-                labels = graph_data.labels[surrogate_train_index]
+                labels = graph_data.labels[graph_data.extraction_train_nodes_index]
 
                 classify_loss = loss_clf(part_outputs, labels)
                 total_loss = args.extraction_ratio * distill_loss + (1.0-args.extraction_ratio) * classify_loss
@@ -146,13 +136,13 @@ def train_surrogate_model(args, data):
             pred = predict_fn(outputs)
             test_labels = predict_fn(test_outputs)
             
-            for i in range(len(surrogate_test_index)):
-                if pred[surrogate_test_index[i]] == graph_data.labels[surrogate_test_index[i]]:
+            for i in range(len(graph_data.test_nodes_index)):
+                if pred[graph_data.test_nodes_index[i]] == graph_data.labels[graph_data.test_nodes_index[i]]:
                     acc_correct += 1
-                if pred[surrogate_test_index[i]] == test_labels[i]:
+                if pred[graph_data.test_nodes_index[i]] == test_labels[i]:
                     fide_correct += 1
 
-            accuracy = acc_correct * 100.0 / len(surrogate_test_index)
+            accuracy = acc_correct * 100.0 / len(graph_data.test_nodes_index)
             fidelity = fide_correct * 100.0 / test_outputs.shape[0]
             print('Accuracy of model extraction is {:.4f} and fidelity is {:.4f}'.format(accuracy, fidelity))
     
@@ -161,11 +151,10 @@ def train_surrogate_model(args, data):
 
 
 def run(args, graph_data, original_model):
-    surrogate_train_index, surrogate_test_index = split_subset(graph_data.test_nodes_index, args.extraction_train_ratio)
-    train_emb = evaluate_target_response(original_model, graph_data, surrogate_train_index, 'embeddings')
-    train_outputs = evaluate_target_response(original_model, graph_data, surrogate_train_index, 'outputs')
-    test_outputs = evaluate_target_response(original_model, graph_data, surrogate_test_index, 'outputs')
-    extraction_data = graph_data, surrogate_train_index, surrogate_test_index, train_emb, train_outputs, test_outputs
+    train_emb = evaluate_target_response(graph_data, original_model, 'train_embeddings')
+    train_outputs = evaluate_target_response(graph_data, original_model, 'train_outputs')
+    test_outputs = evaluate_target_response(graph_data, original_model, 'test_outputs')
+    extraction_data = graph_data, train_emb, train_outputs, test_outputs
     surrogate_model = train_surrogate_model(args, extraction_data)
 
     return surrogate_model

@@ -1,46 +1,50 @@
-import sys, os
-sys.path.append(os.path.abspath('..'))
 import torch
 import copy
 import utils.config
 import utils.datareader
 import model.gcn
 import model.graphsage
+import model.gat
 import torch.nn.functional as F
 import torch.optim.lr_scheduler as lr_scheduler
 from tqdm import tqdm
 from utils.config import parse_args
 
 
-def normal_train(args):
+def normal_train(args, graph_data):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
 
-    data = utils.datareader.get_data(args)
-    gdata = utils.datareader.GraphData(data, args.benign_train_ratio)
+    if graph_data == None:
+        data = utils.datareader.get_data(args)
+        gdata = utils.datareader.GraphData(data, args)
+    else:
+        gdata = graph_data
     
     if args.benign_model == 'gcn':
         gnn_model = model.gcn.GCN(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim, dropout=args.benign_dropout)
     elif args.benign_model == 'sage':
         gnn_model = model.graphsage.GraphSage(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim, dropout=args.benign_dropout)
+    elif args.benign_model == 'gat':
+        gnn_model = model.gat.GAT(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim, dropout=args.benign_dropout)
     gnn_model.to(device)
 
     # training
-    loss_fn = F.cross_entropy
+    loss_fn = torch.nn.CrossEntropyLoss()
     predict_fn = lambda output: output.max(1, keepdim=True)[1]
     optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr, weight_decay=args.benign_weight_decay, betas=(0.5, 0.999))
     scheduler = lr_scheduler.MultiStepLR(optimizer, args.benign_lr_decay_steps, gamma=0.1)
 
     print('Training benign model')
+    gnn_model.train()
     for epoch in tqdm(range(args.benign_train_epochs)):
-        gnn_model.train()
         optimizer.zero_grad()
         input_data = gdata.features.to(device), gdata.adjacency.to(device)
-        gdata.labels = gdata.labels.to(device)
+        labels = gdata.labels.to(device)
         _, output = gnn_model(input_data)
-        loss = loss_fn(output[gdata.train_mask], gdata.labels[gdata.train_mask])
+        loss = loss_fn(output[gdata.benign_train_mask], labels[gdata.benign_train_mask])
         loss.backward()
         #print('training loss in epoch %d is %.4f' % (epoch, loss.item()))
         optimizer.step()
@@ -68,7 +72,7 @@ def antidistill_train(args, gnn_model, bkd_data, bkd_train_node_index, bkd_test_
     else:
         device = torch.device('cpu')
 
-    clean_train_node_index = copy.deepcopy(bkd_data.train_nodes_index)
+    clean_train_node_index = copy.deepcopy(bkd_data.benign_train_nodes_index)
     for i in bkd_train_node_index:
         clean_train_node_index.remove(i)
 
@@ -131,9 +135,9 @@ def antidistill_train(args, gnn_model, bkd_data, bkd_train_node_index, bkd_test_
     return gnn_model
 
 
-def run(args, bkd_data=None):
+def run(args, graph_data=None, bkd_data=None):
     if args.benign_train_method == 'normal':
-        graph_data, gnn_model = normal_train(args)
+        graph_data, gnn_model = normal_train(args, graph_data)
     elif args.benign_train_method == 'anti_distill':
         graph_data, gnn_model = antidistill_train(args, bkd_data)
 

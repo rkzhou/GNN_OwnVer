@@ -20,6 +20,7 @@ class GCN(torch.nn.Module):
             x = layer(x, edge_index)
             x = F.relu(x)
         
+        embedding = x
         x = self.fc(x)
 
-        return F.log_softmax(x, dim=1)
+        return embedding, x

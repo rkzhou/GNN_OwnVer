@@ -123,7 +123,7 @@ def test_performance(args, bkd_data, emb_model, clf_model, bkd_test_node_index):
                 bkd_correct_num += 1
     clean_test_acc = clean_correct_num / len(clean_test_node_index) * 100
     bkd_test_acc = bkd_correct_num / len(bkd_test_node_index) * 100
-    print(clean_test_acc, bkd_test_acc)
+    print('For extraction model, clean testing accuracy is %.4f and backdoor accuracy is %.4f' % (clean_test_acc, bkd_test_acc))
 
 
 def run(args, benign_data, benign_model):

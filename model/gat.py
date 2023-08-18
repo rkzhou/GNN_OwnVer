@@ -3,14 +3,14 @@ import torch_geometric.nn as nn
 import torch.nn.functional as F
 
 
-class GraphSage(torch.nn.Module):
+class GAT(torch.nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dim=[64, 32], dropout=0.0):
-        super(GraphSage, self).__init__()
+        super(GAT, self).__init__()
         self.layers = torch.nn.ModuleList()
 
-        self.layers.append(nn.SAGEConv(in_dim, hidden_dim[0]))
+        self.layers.append(nn.GATConv(in_dim, hidden_dim[0]))
         for i in range(len(hidden_dim) - 1):
-            self.layers.append(nn.SAGEConv(hidden_dim[i], hidden_dim[i+1]))
+            self.layers.append(nn.GATConv(hidden_dim[i], hidden_dim[i+1]))
         
         self.fc = nn.Linear(hidden_dim[-1], out_dim)
 

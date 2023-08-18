@@ -24,4 +24,4 @@ class SageEmb(torch.nn.Module):
         embedding = x
         x = self.fc(x)
 
-        return embedding, F.log_softmax(x, dim=1)
+        return embedding, x
