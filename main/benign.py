@@ -2,9 +2,7 @@ import torch
 import copy
 import utils.config
 import utils.datareader
-import model.gcn
-import model.graphsage
-import model.gat
+import model.gnn_models
 import torch.nn.functional as F
 import torch.optim.lr_scheduler as lr_scheduler
 from tqdm import tqdm
@@ -24,11 +22,11 @@ def normal_train(args, graph_data):
         gdata = graph_data
     
     if args.benign_model == 'gcn':
-        gnn_model = model.gcn.GCN(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim, dropout=args.benign_dropout)
+        gnn_model = model.gnn_models.GCN(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim)
     elif args.benign_model == 'sage':
-        gnn_model = model.graphsage.GraphSage(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim, dropout=args.benign_dropout)
+        gnn_model = model.gnn_models.GraphSage(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim)
     elif args.benign_model == 'gat':
-        gnn_model = model.gat.GAT(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim, dropout=args.benign_dropout)
+        gnn_model = model.gnn_models.GAT(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim)
     gnn_model.to(device)
 
     # training
@@ -38,8 +36,8 @@ def normal_train(args, graph_data):
     scheduler = lr_scheduler.MultiStepLR(optimizer, args.benign_lr_decay_steps, gamma=0.1)
 
     print('Training benign model')
-    gnn_model.train()
     for epoch in tqdm(range(args.benign_train_epochs)):
+        gnn_model.train()
         optimizer.zero_grad()
         input_data = gdata.features.to(device), gdata.adjacency.to(device)
         labels = gdata.labels.to(device)
@@ -82,9 +80,9 @@ def antidistill_train(args, gnn_model, bkd_data, bkd_train_node_index, bkd_test_
     
     if gnn_model == None:
         if args.benign_model == 'gcn':
-            gnn_model = model.gcn.GCN(bkd_data.feat_dim, bkd_data.class_num, hidden_dim=args.benign_hidden_dim, dropout=args.benign_dropout)
+            gnn_model = model.gnn_models.GCN(bkd_data.feat_dim, bkd_data.class_num, hidden_dim=args.benign_hidden_dim, dropout=args.benign_dropout)
         elif args.benign_model == 'sage':
-            gnn_model = model.graphsage.GraphSage(bkd_data.feat_dim, bkd_data.class_num, hidden_dim=args.benign_hidden_dim, dropout=args.benign_dropout)
+            gnn_model = model.gnn_models.GraphSage(bkd_data.feat_dim, bkd_data.class_num, hidden_dim=args.benign_hidden_dim, dropout=args.benign_dropout)
     gnn_model.to(device)
 
     #training

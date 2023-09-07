@@ -4,8 +4,8 @@ import math
 import copy
 import torch.nn.functional as F
 import torch.optim.lr_scheduler as lr_scheduler
+import model.extraction_models
 from tqdm import tqdm
-from model.surrogate_sage import SageEmb
 
 
 class Classification(torch.nn.Module):
@@ -61,7 +61,12 @@ def train_surrogate_model(args, data):
     elif args.extraction_method == 'black_box':
         out_dim = train_outputs.shape[1]
 
-    surrogate_model = SageEmb(in_dim, out_dim, hidden_dim=args.extraction_hidden_dim, dropout=args.extraction_dropout)
+    if args.extraction_model == 'gcnExtract':
+        surrogate_model = model.extraction_models.GcnExtract(in_dim, out_dim, hidden_dim=args.extraction_hidden_dim)
+    elif args.extraction_model == 'sageExtract':
+        surrogate_model = model.extraction_models.SageExtract(in_dim, out_dim, hidden_dim=args.extraction_hidden_dim)
+    elif args.extraction_model == 'gatExtract':
+        surrogate_model = model.extraction_models.GatExtract(in_dim, out_dim, hidden_dim=args.extraction_hidden_dim)
     surrogate_model = surrogate_model.to(device)
 
     loss_fcn = torch.nn.MSELoss()
@@ -82,8 +87,8 @@ def train_surrogate_model(args, data):
     
 
     print('Model Extracting')
-    surrogate_model.train()
     for epoch in tqdm(range(args.extraction_train_epochs)):
+        surrogate_model.train()
         #clf.train()
         train_emb = train_emb.to(device)
         train_outputs = train_outputs.to(device)
@@ -151,7 +156,7 @@ def train_surrogate_model(args, data):
 
 
 def run(args, graph_data, original_model):
-    train_emb = evaluate_target_response(graph_data, original_model, 'train_embeddings')
+    train_emb = evaluate_target_response(graph_data, original_model, 'train_embeddings') # we do not use this in black-box extraction setting
     train_outputs = evaluate_target_response(graph_data, original_model, 'train_outputs')
     test_outputs = evaluate_target_response(graph_data, original_model, 'test_outputs')
     extraction_data = graph_data, train_emb, train_outputs, test_outputs

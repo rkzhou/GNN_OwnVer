@@ -3,6 +3,7 @@ import torch
 import torch_geometric.datasets as dt
 import random
 import math
+import copy
 
 def get_data(args):
     if args.dataset == 'Cora' or 'Citeseer':
@@ -67,6 +68,34 @@ class GraphData(torch.utils.data.Dataset):
         return [self.features[index], self.adj_matrix[index], self.labels[index]]
 
 
+class DistanceData(torch.utils.data.Dataset):
+    def __init__(self, label0_data_list, label1_data_list):
+        self.label0_data_list = copy.deepcopy(label0_data_list)
+        self.label1_data_list = copy.deepcopy(label1_data_list)
+        self.concat_data()
+        label0_data_label = [0 for _ in range(self.label0_data.shape[0])]
+        label1_data_label = [1 for _ in range(self.label1_data.shape[0])]
+        self.label = label0_data_label + label1_data_label
+        self.label = torch.as_tensor(self.label)
+    
+    def concat_data(self):
+        self.label0_data = None
+        self.label1_data = None
+        for data_index in range(len(self.label0_data_list)):
+            if data_index == 0:
+                self.label0_data = self.label0_data_list[data_index]
+                self.label1_data = self.label1_data_list[data_index]
+            else:
+                self.label0_data = torch.cat((self.label0_data, self.label0_data_list[data_index]), 0)
+                self.label1_data = torch.cat((self.label1_data, self.label1_data_list[data_index]), 0)
+        
+        self.data = torch.cat((self.label0_data, self.label1_data), 0)
+
+    def __len__(self):
+        return self.data.shape[0]
+    
+    def __getitem__(self, index):
+        return self.data[index, :], self.label[index]
 
 if __name__ == '__main__':
     pass
