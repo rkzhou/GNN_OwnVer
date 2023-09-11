@@ -133,11 +133,11 @@ def antidistill_train(args, gnn_model, bkd_data, bkd_train_node_index, bkd_test_
     return gnn_model
 
 
-def run(args, graph_data=None, bkd_data=None):
+def run(args, given_graph_data=None, given_bkd_data=None):
     if args.benign_train_method == 'normal':
-        graph_data, gnn_model = normal_train(args, graph_data)
+        graph_data, gnn_model = normal_train(args, given_graph_data)
     elif args.benign_train_method == 'anti_distill':
-        graph_data, gnn_model = antidistill_train(args, bkd_data)
+        graph_data, gnn_model = antidistill_train(args, given_bkd_data)
 
     return graph_data, gnn_model
 

@@ -43,15 +43,32 @@ class GraphData(torch.utils.data.Dataset):
 
     def set_mask(self, args):
         all_nodes_index = list(i for i in range(self.node_num))
-        # random.seed(1997)
-        random.shuffle(all_nodes_index)
-        benign_train_size = math.floor(self.node_num * args.benign_train_ratio)
-        extraction_train_size = math.floor(self.node_num * (1.0-args.benign_train_ratio) * args.extraction_ratio)
-        test_size = self.node_num - benign_train_size - extraction_train_size
+        self.benign_train_nodes_index, self.extraction_train_nodes_index, self.test_nodes_index = list(), list(), list()
+        
+        each_class_nodes_index = [list() for _ in range(self.class_num)]
+        for i in range(self.node_num):
+            each_class_nodes_index[self.labels[i]].append(i)
+        for i in range(self.class_num):
+            # random.seed(args.random_seed)
+            random.shuffle(each_class_nodes_index[i])
+            class_node_num = len(each_class_nodes_index[i])
+            benign_train_size = math.floor(class_node_num * args.benign_train_ratio)
+            extraction_train_size = math.floor(class_node_num * (1.0-args.benign_train_ratio) * args.extraction_ratio)
+            test_size = class_node_num - benign_train_size - extraction_train_size
 
-        self.benign_train_nodes_index = all_nodes_index[:benign_train_size]
-        self.extraction_train_nodes_index = all_nodes_index[benign_train_size:(benign_train_size+extraction_train_size)]
-        self.test_nodes_index = all_nodes_index[(benign_train_size+extraction_train_size):]
+            self.benign_train_nodes_index += each_class_nodes_index[i][:benign_train_size]
+            self.extraction_train_nodes_index += each_class_nodes_index[i][benign_train_size:(benign_train_size+extraction_train_size)]
+            self.test_nodes_index += each_class_nodes_index[i][(benign_train_size+extraction_train_size):]
+        
+        # random.seed(1997)
+        # random.shuffle(all_nodes_index)
+        # benign_train_size = math.floor(self.node_num * args.benign_train_ratio)
+        # extraction_train_size = math.floor(self.node_num * (1.0-args.benign_train_ratio) * args.extraction_ratio)
+        # test_size = self.node_num - benign_train_size - extraction_train_size
+
+        # self.benign_train_nodes_index = all_nodes_index[:benign_train_size]
+        # self.extraction_train_nodes_index = all_nodes_index[benign_train_size:(benign_train_size+extraction_train_size)]
+        # self.test_nodes_index = all_nodes_index[(benign_train_size+extraction_train_size):]
 
         self.benign_train_mask, self.extraction_train_mask, self.test_mask = torch.zeros(self.node_num), torch.zeros(self.node_num), torch.zeros(self.node_num)
         self.benign_train_mask[self.benign_train_nodes_index] = 1

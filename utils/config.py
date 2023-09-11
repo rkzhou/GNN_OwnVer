@@ -3,6 +3,11 @@ import argparse
 def add_data_group(group):
     group.add_argument('--dataset', type=str, default='Cora', help="used dataset")
     group.add_argument('--data_path', type=str, default='../dataset', help="the directory used to save dataset")
+    group.add_argument('--random_seed', type=int, default=0)
+    group.add_argument('--verification_train_num', type=int, default=100)
+    group.add_argument('--mask_node_num', type=int, default=100)
+    group.add_argument('--mask_feat_num', type=int, default=1000)
+    group.add_argument('--mask_type', type=str, default='each_class')
 
 
 def add_benign_model_group(group):
@@ -33,9 +38,9 @@ def add_atk_group(group):
 
 
 def add_extraction_model_group(group):
-    group.add_argument('--extraction_model', type=str, default='gcnExtract', help="used model")
+    group.add_argument('--extraction_model', type=str, default='sageExtract', help="used model")
     group.add_argument('--extraction_train_ratio', type=float, default=0.5, help="ratio of trainset from whole dataset")
-    group.add_argument('--extraction_hidden_dim', nargs='+', default=[64, 32], type=int, help='hidden layers of the model')
+    group.add_argument('--extraction_hidden_dim', nargs='+', default=[2048, 1024, 512], type=int, help='hidden layers of the model')
 
     group.add_argument('--extraction_batch_size', type=int, default=16)
     group.add_argument('--extraction_train_epochs', type=int, default=1000)

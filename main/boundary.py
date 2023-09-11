@@ -8,25 +8,26 @@ import model.gnn_models
 import torch.optim.lr_scheduler as lr_scheduler
 
 
-def poison_graph_data(graph_data, node_num, feature_num, model, pick_nodes_type):
-    topk_nodes = find_topk_nodes_with_loss(graph_data, node_num, model, pick_nodes_type)
+def poison_graph_data(args, graph_data, model):
+    topk_nodes = find_topk_nodes_with_possibility(graph_data, args.mask_node_num, model, args.mask_type)
     topk_features = list(i for i in range(graph_data.feat_dim))
+    # random.seed(args.random_seed)
     random.shuffle(topk_features)
-    topk_features = topk_features[:feature_num]
+    topk_features = topk_features[:args.mask_feat_num]
     # topk_features = [495, 1254, 750, 581, 1336, 774, 485, 827, 38, 1110, 102, 1419, 52, 1062, 971, 1396, 149, 
     #                  763, 1084, 1141, 169, 821, 915, 1135, 35, 32, 576, 863, 1195, 1193, 1237, 1090, 108, 1376, 1331, 166, 431, 263, 390, 885]
     # topk_features = topk_features[:feature_num]
 
     new_graph_data = copy.deepcopy(graph_data)
-    if node_num == 0 or feature_num == 0:
+    if args.mask_node_num == 0 or args.mask_feat_num == 0:
         pass
     else:
         # mask the features of chosen nodes
         for node_class in topk_nodes:
             for node_index in node_class:
-                fixed_feat = torch.rand(feature_num)
+                fixed_feat = torch.rand(args.mask_feat_num)
                 fixed_feat = torch.where(fixed_feat<0.5, 0, 1)
-                for i in range(feature_num):
+                for i in range(args.mask_feat_num):
                     new_graph_data.features[node_index][topk_features[i]] = fixed_feat[i]
     
     return new_graph_data, topk_nodes
@@ -141,7 +142,7 @@ def find_topk_nodes_with_possibility(graph_data, node_num, model, type):
         node_possibilities = [dict() for _ in range(graph_data.class_num)]
         for node_index in graph_data.benign_train_nodes_index:
             node_poss = possibility[node_index]
-            sorted_node_poss, indices = torch.sort(node_poss, descending=True)
+            sorted_node_poss, indices = torch.sort(node_poss, descending=True) # elements are sorted in descending order by value
             node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
             node_possibilities[graph_data.labels[node_index].item()].update({node_index: node_class_distance.item()})
     
@@ -152,6 +153,7 @@ def find_topk_nodes_with_possibility(graph_data, node_num, model, type):
     
         topk_nodes = list()
         for i in range(graph_data.class_num):
+            print(list(new_node_possibilities[i].items())[:node_num])
             topk_nodes.append(list(new_node_possibilities[i].keys())[:node_num])
     elif type == 'overall':
         node_possibilities = dict()
