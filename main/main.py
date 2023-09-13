@@ -13,10 +13,11 @@ from utils.config import parse_args
 
 def ownver(args):
     benign_graph_data, benign_model = benign.run(args)
-    utils.graph_operator.sort_features(args, benign_graph_data.feat_dim, benign_graph_data, benign_model)
 
     watermark_graph_data, watermark_nodes = boundary.poison_graph_data(args, benign_graph_data, benign_model)
+    #args.mask_feat_num = 0
     _, watermark_model = benign.run(args, watermark_graph_data)
+    #_, _, mask_node_possiblity_list = boundary.poison_graph_data(args, watermark_graph_data, watermark_model)
 
     # # independent model for test
     # args.benign_model = 'sage'
@@ -28,10 +29,69 @@ def ownver(args):
     args.extraction_hidden_dim = [64, 32]
     suspicious_model, _ = extraction.run(args, benign_graph_data, watermark_model)
 
-    # measure_nodes = []
-    # for i in watermark_nodes:
-    #     measure_nodes += i
-    # measure_nodes = sorted(measure_nodes)
+    measure_nodes = []
+    for i in watermark_nodes:
+        measure_nodes += i
+    measure_nodes = benign_graph_data.benign_train_nodes_index
+    
+    # if torch.cuda.is_available():
+    #     device = torch.device('cuda')
+    # else:
+    #     device = torch.device('cpu')
+    # benign_model.eval()
+    # benign_input_data = benign_graph_data.features.to(device), benign_graph_data.adjacency.to(device)
+    # benign_labels = benign_graph_data.labels.to(device)
+    # _, benign_output = benign_model(benign_input_data)
+    # predict_fn = lambda output: output.max(1, keepdim=True)[1]
+    # benign_pred = predict_fn(benign_output)
+    # benign_correct_num = 0
+    # benign_error_list = list()
+    # for i in measure_nodes:
+    #     if benign_labels[i] == benign_pred[i]:
+    #         benign_correct_num += 1
+    #     else:
+    #         benign_error_list.append(i)
+    # benign_acc = benign_correct_num * 100 / len(measure_nodes)
+    # print(benign_acc)
+
+    # input_data = watermark_graph_data.features.to(device), watermark_graph_data.adjacency.to(device)
+    # labels = watermark_graph_data.labels.to(device)
+    # _, output = watermark_model(input_data)
+    # predict_fn = lambda output: output.max(1, keepdim=True)[1]
+    # pred = predict_fn(output)
+    # correct_num = 0
+    # error_list = list()
+    # for i in measure_nodes:
+    #     if labels[i] == pred[i]:
+    #         correct_num += 1
+    #     else:
+    #         error_list.append(i)
+    # acc = correct_num * 100 / len(measure_nodes)
+    # print(acc)
+
+    # print(len(benign_error_list), len(error_list))
+    # print(benign_error_list)
+    # print(error_list)
+    # benign_error_list = set(benign_error_list)
+    # error_list = set(error_list)
+    # diff_list = error_list - benign_error_list
+    # diff_list = list(diff_list)
+    # print(len(diff_list))
+    
+    # print(diff_list)
+    # old_dict, new_dict = dict(), dict()
+    # for node_class in node_possibility_list:
+    #     for node_index in diff_list:
+    #         if node_index in node_class.keys():
+    #             old_dict.update({node_index:node_class[node_index]})
+    
+    # for node_class in mask_node_possiblity_list:
+    #     for node_index in diff_list:
+    #         if node_index in node_class.keys():
+    #             new_dict.update({node_index:node_class[node_index]})
+
+    # print(old_dict)
+    # print(new_dict)
 
     # # pair_list = list()
     # # for group_index in range(args.verification_train_num):
@@ -54,9 +114,9 @@ def ownver(args):
 
 def batch_ownver(args, trial_num, unit_test_num):
     independent_arch = ['gcn', 'sage', 'gat']
-    hidden_layers_num = [1, 2, 3]
-    model_layers = [256, 128, 64, 32]
-    verification_num = [5, 10, 20]
+    hidden_layers_num = [1, 2]
+    model_layers = [128, 64, 32, 16]
+    verification_num = [10, 20, 30]
     
     nwm_ind_correct_num_list, nwm_ind_false_num_list = list(), list()
     nwm_ext_correct_num_list, nwm_ext_false_num_list = list(), list()
@@ -82,20 +142,20 @@ def batch_ownver(args, trial_num, unit_test_num):
         for i in watermark_nodes:
             measure_nodes += i
         
-        random.seed(trial_epoch)
         setting_num = random.choice(verification_num)
         args.verification_train_num = setting_num
         
         nwm_pair_list, wm_pair_list = list(), list()
         # test with non-watermark model
         for group_index in range(args.verification_train_num):
-            independent_model, extraction_model = verification.train_models(args, original_graph_data, original_model, group_index)
+            independent_model, extraction_model = verification.train_models(args, original_graph_data, original_model)
             logits = verification.extract_logits(original_graph_data, measure_nodes, independent_model, original_model, extraction_model)
             distance_pair = verification.measure_logits(logits)
             nwm_pair_list.append(distance_pair)
         nwm_classifier_model = verification.train_classifier(nwm_pair_list, 'flatten')
         save_path = '../temp_results/model_states/nonwatermark_classifiers/' + 'model' + str(trial_epoch) + '.pt'
         torch.save(nwm_classifier_model.state_dict(), save_path)
+        #the number of independent models predicted to 0, of independent models predicted to 1, of extraction models predicted to 0, of extraction models predicted to 1
         nwm_sta0, nwm_sta1, nwm_sta2, nwm_sta3 = batch_unit_test(args, original_graph_data, original_model, nwm_classifier_model, measure_nodes, unit_test_num, 'nonwatermark')
         nwm_ind_correct_num_list.append(nwm_sta0)
         nwm_ind_false_num_list.append(nwm_sta1)
@@ -104,7 +164,7 @@ def batch_ownver(args, trial_num, unit_test_num):
         
         # test with watermark model
         for group_index in range(args.verification_train_num):
-            independent_model, extraction_model = verification.train_models(args, original_graph_data, watermark_model, group_index)
+            independent_model, extraction_model = verification.train_models(args, original_graph_data, watermark_model)
             logits = verification.extract_logits(original_graph_data, measure_nodes, independent_model, watermark_model, extraction_model)
             distance_pair = verification.measure_logits(logits)
             wm_pair_list.append(distance_pair)
@@ -140,8 +200,8 @@ def batch_ownver(args, trial_num, unit_test_num):
 def batch_unit_test(args, graph_data, watermark_model, classifier_model, measure_nodes, test_num, flag):
     independent_arch = ['gcn', 'sage', 'gat']
     extraction_arch = ['gcnExtract', 'sageExtract', 'gatExtract']
-    hidden_layers_num = [1, 2, 3]
-    model_layers = [256, 128, 64, 32]
+    hidden_layers_num = [1, 2]
+    model_layers = [2048, 1024, 512, 256]
     
     overall_ind_pred0_num, overall_ind_pred1_num = 0, 0
     overall_ext_pred0_num, overall_ext_pred1_num = 0, 0
@@ -163,7 +223,7 @@ def batch_unit_test(args, graph_data, watermark_model, classifier_model, measure
         args.extraction_model = test_extraction_arch
         args.extraction_hidden_dim = test_extraction_layers
             
-        _, test_independent_model = benign.run(args)
+        _, test_independent_model = benign.run(args, graph_data)
         test_extraction_model, _ = extraction.run(args, graph_data, watermark_model)
         
         ind_pred0_num, ind_pred1_num = 0, 0
@@ -207,4 +267,4 @@ def batch_unit_test(args, graph_data, watermark_model, classifier_model, measure
 if __name__ == '__main__':
     args = parse_args()
     ownver(args)
-    #batch_ownver(args, 10, 20)
+    # batch_ownver(args, 10, 20)

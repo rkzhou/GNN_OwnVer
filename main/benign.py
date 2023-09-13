@@ -33,7 +33,7 @@ def normal_train(args, graph_data):
     loss_fn = torch.nn.CrossEntropyLoss()
     predict_fn = lambda output: output.max(1, keepdim=True)[1]
     optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr, weight_decay=args.benign_weight_decay, betas=(0.5, 0.999))
-    scheduler = lr_scheduler.MultiStepLR(optimizer, args.benign_lr_decay_steps, gamma=0.1)
+    # scheduler = lr_scheduler.MultiStepLR(optimizer, args.benign_lr_decay_steps, gamma=0.1)
 
     print('Training benign model')
     for epoch in tqdm(range(args.benign_train_epochs)):
@@ -46,20 +46,28 @@ def normal_train(args, graph_data):
         loss.backward()
         #print('training loss in epoch %d is %.4f' % (epoch, loss.item()))
         optimizer.step()
-        scheduler.step()
+        # scheduler.step()
 
-        if (epoch + 1) % 100 == 0:
-            gnn_model.eval()
-            _, output = gnn_model(input_data)
-            pred = predict_fn(output)
-            test_pred = pred[gdata.test_mask]
-            test_labels = gdata.labels[gdata.test_mask]
-            correct_num = 0
-            for i in range(test_pred.shape[0]):
-                if test_pred[i, 0] == test_labels[i]:
-                    correct_num += 1
-            test_acc = correct_num / test_pred.shape[0] * 100
-            print('Testing accuracy is %.4f' % (test_acc))
+        # train_correct_num, test_correct_num = 0, 0
+        # if (epoch + 1) % 100 == 0:
+        #     gnn_model.eval()
+        #     _, output = gnn_model(input_data)
+        #     pred = predict_fn(output)
+        #     train_pred = pred[gdata.benign_train_mask]
+        #     train_labels = gdata.labels[gdata.benign_train_mask]
+        #     test_pred = pred[gdata.test_mask]
+        #     test_labels = gdata.labels[gdata.test_mask]
+            
+        #     for i in range(train_pred.shape[0]):
+        #         if train_pred[i, 0] == train_labels[i]:
+        #             train_correct_num += 1
+        #     train_acc = train_correct_num / train_pred.shape[0] * 100
+        #     print('Training accuracy is %.4f' % (train_acc))
+        #     for i in range(test_pred.shape[0]):
+        #         if test_pred[i, 0] == test_labels[i]:
+        #             test_correct_num += 1
+        #     test_acc = test_correct_num / test_pred.shape[0] * 100
+        #     print('Testing accuracy is %.4f' % (test_acc))
     
     return gdata, gnn_model
 

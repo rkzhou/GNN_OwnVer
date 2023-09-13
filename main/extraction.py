@@ -73,7 +73,7 @@ def train_surrogate_model(args, data):
     loss_clf = torch.nn.CrossEntropyLoss()
 
     optimizer_embedding = torch.optim.Adam(surrogate_model.parameters(), lr=args.extraction_lr, weight_decay=args.extraction_weight_decay, betas=(0.5, 0.999))
-    scheduler_embedding = lr_scheduler.MultiStepLR(optimizer_embedding, args.extraction_lr_decay_steps, gamma=0.1)
+    # scheduler_embedding = lr_scheduler.MultiStepLR(optimizer_embedding, args.extraction_lr_decay_steps, gamma=0.1)
 
     clf = None
     if args.extraction_method == 'white_box':
@@ -86,7 +86,7 @@ def train_surrogate_model(args, data):
     predict_fn = lambda output: output.max(1, keepdim=True)[1]
     
 
-    print('Model Extracting')
+    # print('Model Extracting')
     for epoch in tqdm(range(args.extraction_train_epochs)):
         surrogate_model.train()
         #clf.train()
@@ -103,7 +103,7 @@ def train_surrogate_model(args, data):
             loss_emb = torch.sqrt(loss_fcn(part_embeddings, train_emb))
             loss_emb.backward()
             optimizer_embedding.step()
-            scheduler_embedding.step()
+            # scheduler_embedding.step()
 
             outputs = clf(part_embeddings.detach())
             train_labels = predict_fn(train_outputs)
@@ -125,31 +125,31 @@ def train_surrogate_model(args, data):
                 total_loss = args.extraction_ratio * distill_loss + (1.0-args.extraction_ratio) * classify_loss
                 total_loss.backward()
             optimizer_embedding.step()
-            scheduler_embedding.step()
+            # scheduler_embedding.step()
 
-        if (epoch + 1) % 100 == 0:
-            surrogate_model.eval()
-            if args.extraction_method == 'white_box':
-                clf.eval()
+        # if (epoch + 1) % 100 == 0:
+        #     surrogate_model.eval()
+        #     if args.extraction_method == 'white_box':
+        #         clf.eval()
 
-            acc_correct = 0
-            fide_correct = 0
+        #     acc_correct = 0
+        #     fide_correct = 0
 
-            embeddings, outputs = surrogate_model(input_data)
-            if args.extraction_method == 'white_box':
-                outputs = clf(embeddings.detach())
-            pred = predict_fn(outputs)
-            test_labels = predict_fn(test_outputs)
+        #     embeddings, outputs = surrogate_model(input_data)
+        #     if args.extraction_method == 'white_box':
+        #         outputs = clf(embeddings.detach())
+        #     pred = predict_fn(outputs)
+        #     test_labels = predict_fn(test_outputs)
             
-            for i in range(len(graph_data.test_nodes_index)):
-                if pred[graph_data.test_nodes_index[i]] == graph_data.labels[graph_data.test_nodes_index[i]]:
-                    acc_correct += 1
-                if pred[graph_data.test_nodes_index[i]] == test_labels[i]:
-                    fide_correct += 1
+        #     for i in range(len(graph_data.test_nodes_index)):
+        #         if pred[graph_data.test_nodes_index[i]] == graph_data.labels[graph_data.test_nodes_index[i]]:
+        #             acc_correct += 1
+        #         if pred[graph_data.test_nodes_index[i]] == test_labels[i]:
+        #             fide_correct += 1
 
-            accuracy = acc_correct * 100.0 / len(graph_data.test_nodes_index)
-            fidelity = fide_correct * 100.0 / test_outputs.shape[0]
-            print('Accuracy of model extraction is {:.4f} and fidelity is {:.4f}'.format(accuracy, fidelity))
+        #     accuracy = acc_correct * 100.0 / len(graph_data.test_nodes_index)
+        #     fidelity = fide_correct * 100.0 / test_outputs.shape[0]
+        #     print('Accuracy of model extraction is {:.4f} and fidelity is {:.4f}'.format(accuracy, fidelity))
     
 
     return surrogate_model, clf

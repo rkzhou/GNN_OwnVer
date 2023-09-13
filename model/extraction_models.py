@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class SageExtract(torch.nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_dim=[64, 32], dropout=0.0):
+    def __init__(self, in_dim, out_dim, hidden_dim=[64, 32]):
         super(SageExtract, self).__init__()
         self.layers = torch.nn.ModuleList()
 
@@ -28,7 +28,7 @@ class SageExtract(torch.nn.Module):
     
 
 class GcnExtract(torch.nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_dim=[64, 32], dropout=0.0):
+    def __init__(self, in_dim, out_dim, hidden_dim=[64, 32]):
         super(GcnExtract, self).__init__()
         self.layers = torch.nn.ModuleList()
 
@@ -52,7 +52,7 @@ class GcnExtract(torch.nn.Module):
 
 
 class GatExtract(torch.nn.Module):
-    def __init__(self, in_dim, out_dim, hidden_dim=[64, 32], dropout=0.0):
+    def __init__(self, in_dim, out_dim, hidden_dim=[64, 32]):
         super(GatExtract, self).__init__()
         self.layers = torch.nn.ModuleList()
 

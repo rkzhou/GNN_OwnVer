@@ -46,19 +46,19 @@ def measure_logits(logits):
     watermark_logits = logits['watermark']
     surrogate_logits = logits['surrogate']
     
-    wi_distance = watermark_logits - independent_logits # this distance should be far, label=0
-    ws_distance = watermark_logits - surrogate_logits # this distance should be close, label=1
+    wi_distance = watermark_logits - independent_logits # this distance between watermark model and independent model in mask nodes, label=0
+    ws_distance = watermark_logits - surrogate_logits # this distance between watermark model and extraction model in mask nodes, label=1
     
     distance_pair = {'label_0': wi_distance, 'label_1': ws_distance}
     
     return distance_pair
 
 
-def train_models(args, graph_data, watermark_model, random_seed_index):
+def train_models(args, graph_data, watermark_model):
     independent_arch = ['gcn', 'sage', 'gat']
     extraction_arch = ['gcnExtract', 'sageExtract', 'gatExtract']
-    hidden_layers_num = [1, 2, 3]
-    model_layers = [256, 128, 64, 32]
+    hidden_layers_num = [1, 2]
+    model_layers = [128, 64, 32, 16]
 
     selected_independent_arch = random.choice(independent_arch)
     selected_independent_layers_num = random.choice(hidden_layers_num)
@@ -124,7 +124,7 @@ def train_classifier(distance_pairs:list, type):
     dataset = utils.datareader.DistanceData(processed_data['label0'], processed_data['label1'])
     dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
     
-    hidden_layers = [256, 128, 64]
+    hidden_layers = [128, 32]
     model = mlp_nn(dataset.data.shape[1], hidden_layers)
     loss_fn = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)

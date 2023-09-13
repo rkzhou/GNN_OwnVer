@@ -14,7 +14,7 @@ class mlp_nn(nn.Module):
             
             layers.append(nn.ReLU())
             
-            if i % 2 == 0 and i != 0 and i != (hidden_layer_num - 1) and dropout != 0.0:
+            if (i+1) % 2 == 0 and i != (hidden_layer_num - 1) and dropout != 0.0:
                 layers.append(nn.Dropout(dropout))
         
         layers.append(nn.Linear(hidden_layers[-1], 2))

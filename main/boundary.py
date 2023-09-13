@@ -148,12 +148,11 @@ def find_topk_nodes_with_possibility(graph_data, node_num, model, type):
     
         new_node_possibilities = list()
         for class_node_possibility in node_possibilities:
-            class_node_possibility = dict(sorted(class_node_possibility.items(), key=lambda x:x[1], reverse=False))
+            class_node_possibility = dict(sorted(class_node_possibility.items(), key=lambda x:x[1], reverse=True))
             new_node_possibilities.append(class_node_possibility)
     
         topk_nodes = list()
         for i in range(graph_data.class_num):
-            print(list(new_node_possibilities[i].items())[:node_num])
             topk_nodes.append(list(new_node_possibilities[i].keys())[:node_num])
     elif type == 'overall':
         node_possibilities = dict()
