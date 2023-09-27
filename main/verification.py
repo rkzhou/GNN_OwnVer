@@ -9,56 +9,52 @@ import model.extraction_models
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from model.mlp import mlp_nn
+import boundary
 
 
-def extract_logits(graph_data, specific_nodes, independent_model, watermark_model, surrogate_model):
+def extract_logits(graph_data, specific_nodes, independent_model, surrogate_model):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
     
     independent_model.eval()
-    watermark_model.eval()
     surrogate_model.eval()
     
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
     _, independent_output = independent_model(input_data)
-    _, watermark_output = watermark_model(input_data)
     _, surrogate_output = surrogate_model(input_data)
 
     softmax = torch.nn.Softmax(dim=1)
     independent_logits = softmax(independent_output)
-    watermark_logits = softmax(watermark_output)
     surrogate_logits = softmax(surrogate_output)
 
     if specific_nodes != None:
         independent_logits = independent_logits[specific_nodes].detach().cpu()
-        watermark_logits = watermark_logits[specific_nodes].detach().cpu()
         surrogate_logits = surrogate_logits[specific_nodes].detach().cpu()
     
-    logits = {'independent': independent_logits, 'watermark': watermark_logits, 'surrogate': surrogate_logits}
+    logits = {'independent': independent_logits, 'surrogate': surrogate_logits}
     
     return logits
 
 
 def measure_logits(logits):
     independent_logits = logits['independent']
-    watermark_logits = logits['watermark']
     surrogate_logits = logits['surrogate']
     
-    wi_distance = watermark_logits - independent_logits # this distance between watermark model and independent model in mask nodes, label=0
-    ws_distance = watermark_logits - surrogate_logits # this distance between watermark model and extraction model in mask nodes, label=1
+    independent_var = torch.var(independent_logits, axis=1)
+    surrogate_var = torch.var(surrogate_logits, axis=1)
     
-    distance_pair = {'label_0': wi_distance, 'label_1': ws_distance}
+    distance_pair = {'label_0': independent_var, 'label_1': surrogate_var}
     
     return distance_pair
 
 
 def train_models(args, graph_data, watermark_model):
-    independent_arch = ['gcn', 'sage', 'gat']
-    extraction_arch = ['gcnExtract', 'sageExtract', 'gatExtract']
+    independent_arch = ['sage']
+    extraction_arch = ['sageExtract']
     hidden_layers_num = [1, 2]
-    model_layers = [128, 64, 32, 16]
+    model_layers = [256, 512, 1024, 2048]
 
     selected_independent_arch = random.choice(independent_arch)
     selected_independent_layers_num = random.choice(hidden_layers_num)
@@ -102,7 +98,7 @@ def preprocess_data_flatten(distance_pairs:list):
     for pair_index in range(len(distance_pairs)):
         label0_distance = torch.flatten(distance_pairs[pair_index]['label_0']).view(1, -1)
         label1_distance = torch.flatten(distance_pairs[pair_index]['label_1']).view(1, -1)
-
+        
         total_label0.append(label0_distance)
         total_label1.append(label1_distance)
     
@@ -128,7 +124,7 @@ def train_classifier(distance_pairs:list, type):
     model = mlp_nn(dataset.data.shape[1], hidden_layers)
     loss_fn = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    epoch_num = 500
+    epoch_num = 1000
     
     model.to(device)
     for epoch_index in tqdm(range(epoch_num)):
@@ -177,7 +173,9 @@ def owner_verify(graph_data, watermark_model, suspicious_model, verifier_model, 
         watermark_logits = watermark_logits[measure_nodes].detach().cpu()
         suspicious_logits = suspicious_logits[measure_nodes].detach().cpu()
 
-    distance = watermark_logits - suspicious_logits
+    watermark_var = torch.var(watermark_logits, axis=1)
+    suspicious_var = torch.var(suspicious_logits, axis=1)
+    distance = watermark_var - suspicious_var
     distance = torch.flatten(distance).view(1, -1)
 
     verifier_model.to(device)

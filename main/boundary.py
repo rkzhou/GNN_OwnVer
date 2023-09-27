@@ -6,29 +6,35 @@ import torch.nn.functional as F
 import torch_geometric.nn as nn
 import model.gnn_models
 import torch.optim.lr_scheduler as lr_scheduler
+from sklearn.ensemble import RandomForestClassifier
 
 
-def poison_graph_data(args, graph_data, model):
-    topk_nodes = find_topk_nodes_with_possibility(graph_data, args.mask_node_num, model, args.mask_type)
-    topk_features = list(i for i in range(graph_data.feat_dim))
-    # random.seed(args.random_seed)
-    random.shuffle(topk_features)
-    topk_features = topk_features[:args.mask_feat_num]
-    # topk_features = [495, 1254, 750, 581, 1336, 774, 485, 827, 38, 1110, 102, 1419, 52, 1062, 971, 1396, 149, 
-    #                  763, 1084, 1141, 169, 821, 915, 1135, 35, 32, 576, 863, 1195, 1193, 1237, 1090, 108, 1376, 1331, 166, 431, 263, 390, 885]
-    # topk_features = topk_features[:feature_num]
+def mask_graph_data(args, graph_data, model):
+    topk_nodes = find_topk_nodes_with_possibility(graph_data, args.mask_node_num, model, args.mask_node_type)
 
     new_graph_data = copy.deepcopy(graph_data)
     if args.mask_node_num == 0 or args.mask_feat_num == 0:
         pass
     else:
-        # mask the features of chosen nodes
-        for node_class in topk_nodes:
-            for node_index in node_class:
-                fixed_feat = torch.rand(args.mask_feat_num)
-                fixed_feat = torch.where(fixed_feat<0.5, 0, 1)
-                for i in range(args.mask_feat_num):
-                    new_graph_data.features[node_index][topk_features[i]] = fixed_feat[i]
+        if args.mask_feat_type == 'random':
+            topk_features = list(i for i in range(graph_data.feat_dim))
+            random.shuffle(topk_features)
+            topk_features = topk_features[:args.mask_feat_num]
+        elif args.mask_feat_type == 'overall_importance':
+            topk_features = find_topk_features_overall(graph_data, args.mask_feat_num)
+        elif args.mask_feat_type == 'individual_importance':
+            topk_features = find_topk_features_individual(graph_data, model, topk_nodes, args.mask_feat_num)
+        
+        # flip the selected features of chosen nodes
+        if args.mask_feat_type == 'random' or args.mask_feat_type == 'overall_importance':
+            for node_class in topk_nodes:
+                for node_index in node_class:
+                    for i in range(args.mask_feat_num):
+                        new_graph_data.features[node_index][topk_features[i]] = (new_graph_data.features[node_index][topk_features[i]] + 1) % 2
+        elif args.mask_feat_type == 'individual_importance':
+            for node_index, feat_list in topk_features.items():
+                for feat_index in feat_list:
+                    new_graph_data.features[node_index, feat_index] = (new_graph_data.features[node_index, feat_index] + 1) % 2
     
     return new_graph_data, topk_nodes
 
@@ -131,9 +137,7 @@ def find_topk_nodes_with_possibility(graph_data, node_num, model, type):
         device = torch.device('cpu')
     
     model.eval()
-    loss_fn = F.cross_entropy
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-    labels = graph_data.labels.to(device)
     _, output = model(input_data)
     softmax = torch.nn.Softmax(dim=1)
     possibility = softmax(output)
@@ -167,3 +171,61 @@ def find_topk_nodes_with_possibility(graph_data, node_num, model, type):
         topk_nodes.append(list(node_possibilities.keys())[:node_num])
     
     return topk_nodes
+
+
+def find_topk_features_overall(graph_data, feat_num):
+    X = graph_data.features.numpy()
+    Y = graph_data.labels.numpy()
+
+    dt_model = RandomForestClassifier()
+    dt_model.fit(X, Y)
+    feat_importance = dt_model.feature_importances_
+
+    importance_dict = dict()
+    for index, value in enumerate(feat_importance):
+        importance_dict.update({index: value})
+    importance_dict = dict(sorted(importance_dict.items(), key=lambda x:x[1], reverse=True))
+    topk_features = list(importance_dict.keys())[:feat_num]
+
+    return topk_features
+
+
+def find_topk_features_individual(graph_data, gnn_model, node_list, feat_num):
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+
+    softmax = torch.nn.Softmax(dim=1)
+    gnn_model.eval()
+    gnn_model.to(device)
+
+    input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
+    _, output = gnn_model(input_data)
+    possibility = softmax(output).detach().cpu()
+    var = torch.var(possibility, axis=1)
+
+    temp_node_list = list()
+    for node_class in node_list:
+        temp_node_list += node_class
+    
+    original_variances = dict()
+    for node_index in temp_node_list:
+        original_variances.update({node_index:var[node_index]})
+    
+    node_selected_feat = dict()
+    for node_index in temp_node_list:
+        feat_var_diff = dict()
+        for feat_index in range(graph_data.feat_dim):
+            temp_features = copy.deepcopy(graph_data.features)
+            temp_features[node_index, feat_index] = (temp_features[node_index, feat_index] + 1) % 2
+            input_data = temp_features.to(device), graph_data.adjacency.to(device)
+            _, output = gnn_model(input_data)
+            possibility = softmax(output).detach().cpu()
+            temp_var = torch.var(possibility[node_index])
+            var_diff = original_variances[node_index] - temp_var
+            feat_var_diff.update({feat_index:var_diff})
+        feat_var_diff = dict(sorted(feat_var_diff.items(), key=lambda x:x[1], reverse=True))
+        node_selected_feat.update({node_index:list(feat_var_diff.keys())[:feat_num]})
+    
+    return node_selected_feat

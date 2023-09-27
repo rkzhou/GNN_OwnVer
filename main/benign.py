@@ -33,9 +33,9 @@ def normal_train(args, graph_data):
     loss_fn = torch.nn.CrossEntropyLoss()
     predict_fn = lambda output: output.max(1, keepdim=True)[1]
     optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr, weight_decay=args.benign_weight_decay, betas=(0.5, 0.999))
-    # scheduler = lr_scheduler.MultiStepLR(optimizer, args.benign_lr_decay_steps, gamma=0.1)
+    scheduler = lr_scheduler.MultiStepLR(optimizer, args.benign_lr_decay_steps, gamma=0.1)
 
-    print('Training benign model')
+    # print('Training benign model')
     for epoch in tqdm(range(args.benign_train_epochs)):
         gnn_model.train()
         optimizer.zero_grad()
@@ -46,7 +46,7 @@ def normal_train(args, graph_data):
         loss.backward()
         #print('training loss in epoch %d is %.4f' % (epoch, loss.item()))
         optimizer.step()
-        # scheduler.step()
+        scheduler.step()
 
         # train_correct_num, test_correct_num = 0, 0
         # if (epoch + 1) % 100 == 0:
@@ -139,6 +139,25 @@ def antidistill_train(args, gnn_model, bkd_data, bkd_train_node_index, bkd_test_
             print('Backdoor test accuracy is %.4f' % (bkd_test_acc))
     
     return gnn_model
+
+
+def get_possibility_variance(graph_data, gnn_model, measure_nodes):
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+    
+    gnn_model.eval()
+    gnn_model.to(device)
+
+    input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
+    _, output = gnn_model(input_data)
+    softmax = torch.nn.Softmax(dim=1)
+    possibility = softmax(output)
+    specific_possibility_vectors = possibility[measure_nodes].detach().cpu()
+    variance = torch.var(specific_possibility_vectors, dim=1)
+
+    return variance
 
 
 def run(args, given_graph_data=None, given_bkd_data=None):

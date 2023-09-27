@@ -73,7 +73,7 @@ def train_surrogate_model(args, data):
     loss_clf = torch.nn.CrossEntropyLoss()
 
     optimizer_embedding = torch.optim.Adam(surrogate_model.parameters(), lr=args.extraction_lr, weight_decay=args.extraction_weight_decay, betas=(0.5, 0.999))
-    # scheduler_embedding = lr_scheduler.MultiStepLR(optimizer_embedding, args.extraction_lr_decay_steps, gamma=0.1)
+    scheduler_embedding = lr_scheduler.MultiStepLR(optimizer_embedding, args.extraction_lr_decay_steps, gamma=0.1)
 
     clf = None
     if args.extraction_method == 'white_box':
@@ -125,7 +125,7 @@ def train_surrogate_model(args, data):
                 total_loss = args.extraction_ratio * distill_loss + (1.0-args.extraction_ratio) * classify_loss
                 total_loss.backward()
             optimizer_embedding.step()
-            # scheduler_embedding.step()
+            scheduler_embedding.step()
 
         # if (epoch + 1) % 100 == 0:
         #     surrogate_model.eval()

@@ -76,27 +76,22 @@ def sort_features(args, feat_num, graph_data, original_model):
     candidate_feat = copy.deepcopy(graph_data.features)
 
     for iter in range(feat_num):
-        if args.benign_model == 'gcn':
-            selection_model = model.gnn_models.GCN(iter+1, graph_data.class_num, hidden_dim=args.benign_hidden_dim)
-        elif args.benign_model == 'sage':
-            selection_model = model.gnn_models.GraphSage(iter+1, graph_data.class_num, hidden_dim=args.benign_hidden_dim)
-        elif args.benign_model == 'gat':
-            selection_model = model.gnn_models.GAT(iter+1, graph_data.class_num, hidden_dim=args.benign_hidden_dim)
-        selection_model.to(device)
-        optimizer = torch.optim.Adam(selection_model.parameters(), lr=args.benign_lr, weight_decay=args.benign_weight_decay, betas=(0.5, 0.999))
-        scheduler = lr_scheduler.MultiStepLR(optimizer, args.benign_lr_decay_steps, gamma=0.1)
 
         feat_fidelity = dict()
         for feat_index in range(graph_data.feat_dim):
             if feat_index in chosen_feat:
                 continue
-            
-            for module in selection_model.children():
-                if isinstance(module, torch.nn.ModuleList):
-                    for layer in module:
-                        layer.reset_parameters()
-                else:
-                    module.reset_parameters()
+            print(feat_index)
+            selection_model = None
+            if args.benign_model == 'gcn':
+                selection_model = model.gnn_models.GCN(iter+1, graph_data.class_num, hidden_dim=args.benign_hidden_dim)
+            elif args.benign_model == 'sage':
+                selection_model = model.gnn_models.GraphSage(iter+1, graph_data.class_num, hidden_dim=args.benign_hidden_dim)
+            elif args.benign_model == 'gat':
+                selection_model = model.gnn_models.GAT(iter+1, graph_data.class_num, hidden_dim=args.benign_hidden_dim)
+            selection_model.to(device)
+            optimizer = torch.optim.Adam(selection_model.parameters(), lr=args.benign_lr, weight_decay=args.benign_weight_decay, betas=(0.5, 0.999))
+            scheduler = lr_scheduler.MultiStepLR(optimizer, args.benign_lr_decay_steps, gamma=0.1)
 
             this_loop_feat = copy.deepcopy(chosen_feat)
             this_loop_feat.append(feat_index)
