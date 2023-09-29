@@ -6,9 +6,15 @@ import math
 import copy
 
 def get_data(args):
-    if args.dataset == 'Cora' or 'Citeseer':
-        dataset = dt.Planetoid(args.data_path, args.dataset)
-        data_path = args.data_path + '/' + args.dataset + '/processed/data.pt'
+    if args.dataset == 'Cora_ML' or args.dataset == 'Citeseer' or args.dataset == 'DBLP' or args.dataset == 'PubMed':
+        dataset = dt.CitationFull(args.data_path, args.dataset)
+        data_path = args.data_path + '/' + (args.dataset).lower() + '/processed/data.pt'
+    elif args.dataset == 'Coauthor':
+        dataset = dt.Coauthor(args.data_path, 'Physics')
+        data_path = args.data_path + '/' + 'Physics' + '/processed/data.pt'
+    elif args.dataset == 'Amazon':
+        dataset = dt.Amazon(args.data_path, 'Photo')
+        data_path = args.data_path + '/' + 'Photo' + '/processed/data.pt'
     
     data = torch.load(data_path)
     

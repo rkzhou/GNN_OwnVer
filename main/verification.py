@@ -12,40 +12,40 @@ from model.mlp import mlp_nn
 import boundary
 
 
-def extract_logits(graph_data, specific_nodes, independent_model, surrogate_model):
+def extract_logits(graph_data, specific_nodes, independent_model, extraction_model):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
     
     independent_model.eval()
-    surrogate_model.eval()
+    extraction_model.eval()
     
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
     _, independent_output = independent_model(input_data)
-    _, surrogate_output = surrogate_model(input_data)
+    _, extraction_output = extraction_model(input_data)
 
     softmax = torch.nn.Softmax(dim=1)
     independent_logits = softmax(independent_output)
-    surrogate_logits = softmax(surrogate_output)
+    extraction_logits = softmax(extraction_output)
 
     if specific_nodes != None:
         independent_logits = independent_logits[specific_nodes].detach().cpu()
-        surrogate_logits = surrogate_logits[specific_nodes].detach().cpu()
+        extraction_logits = extraction_logits[specific_nodes].detach().cpu()
     
-    logits = {'independent': independent_logits, 'surrogate': surrogate_logits}
+    logits = {'independent': independent_logits, 'extraction': extraction_logits}
     
     return logits
 
 
 def measure_logits(logits):
     independent_logits = logits['independent']
-    surrogate_logits = logits['surrogate']
+    extraction_logits = logits['extraction']
     
     independent_var = torch.var(independent_logits, axis=1)
-    surrogate_var = torch.var(surrogate_logits, axis=1)
+    extraction_var = torch.var(extraction_logits, axis=1)
     
-    distance_pair = {'label_0': independent_var, 'label_1': surrogate_var}
+    distance_pair = {'label_0': independent_var, 'label_1': extraction_var}
     
     return distance_pair
 
@@ -180,19 +180,6 @@ def owner_verify(graph_data, watermark_model, suspicious_model, verifier_model, 
 
     verifier_model.to(device)
     verifier_model.eval()
-
-    # predict_label0_num, predict_label1_num = 0, 0
-    # inputs = distance.to(device)
-    # outputs = verifier_model(inputs)
-    # _, predictions = torch.max(outputs.data, 1)
-    # for i in range(predictions.shape[0]):
-    #     if predictions[i] == 0:
-    #         predict_label0_num += 1
-    #     elif predictions[i] == 1:
-    #         predict_label1_num += 1
-    
-    # print('node number of label_0 is:', predict_label0_num)
-    # print('node number of label_1 is:', predict_label1_num)
 
     inputs = distance.to(device)
     outputs = verifier_model(inputs)

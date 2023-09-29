@@ -59,17 +59,13 @@ def measure_posteriors(graph_data, specific_nodes, emb_model, clf_model=None):
         test_posteriors = outputs[graph_data.test_mask]
         
         softmax = torch.nn.Softmax(dim=1)
-        train_posteriors = softmax(train_posteriors)
-        test_posteriors = softmax(test_posteriors)
+        train_posteriors = softmax(train_posteriors).detach().cpu()
+        test_posteriors = softmax(test_posteriors).detach().cpu()
         
-        # train_entropy = torch.sum(torch.sum(torch.special.entr(train_posteriors), dim=1))
-        # test_entropy = torch.sum(torch.sum(torch.special.entr(test_posteriors), dim=1))
-        # print(train_entropy, test_entropy)
-        
-        train_var = torch.sum(torch.var(train_posteriors, axis=1))
-        train_var = torch.div(train_var, len(graph_data.benign_train_nodes_index))
-        test_var = torch.sum(torch.var(test_posteriors, axis=1))
-        test_var = torch.div(test_var, len(graph_data.test_nodes_index))
+        train_var = torch.var(train_posteriors, axis=1)
+        train_var = torch.mean(train_var)
+        test_var = torch.var(test_posteriors, axis=1)
+        test_var = torch.mean(test_var)
         print(train_var, test_var)
     else:
         measure_nodes = list()
@@ -105,7 +101,7 @@ def find_topk_nodes_with_loss(graph_data, node_num, model, type):
     if type == 'each_class':
         node_losses = [dict() for _ in range(graph_data.class_num)]
         for node_index in graph_data.benign_train_nodes_index:
-            loss = loss_fn(output[node_index], labels[node_index])
+            loss = loss_fn(output[node_index], labels[node_index]).detach().cpu()
             node_losses[graph_data.labels[node_index].item()].update({node_index: loss.item()})
     
         new_node_losses = list()
@@ -119,7 +115,7 @@ def find_topk_nodes_with_loss(graph_data, node_num, model, type):
     elif type == 'overall':
         node_losses = dict()
         for node_index in graph_data.benign_train_nodes_index:
-            loss = loss_fn(output[node_index], labels[node_index])
+            loss = loss_fn(output[node_index], labels[node_index]).detach().cpu()
             node_losses.update({node_index: loss.item()})
         
         node_losses = dict(sorted(node_losses.items(), key=lambda x:x[1], reverse=False))
@@ -145,7 +141,7 @@ def find_topk_nodes_with_possibility(graph_data, node_num, model, type):
     if type == 'each_class':
         node_possibilities = [dict() for _ in range(graph_data.class_num)]
         for node_index in graph_data.benign_train_nodes_index:
-            node_poss = possibility[node_index]
+            node_poss = possibility[node_index].detach().cpu()
             sorted_node_poss, indices = torch.sort(node_poss, descending=True) # elements are sorted in descending order by value
             node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
             node_possibilities[graph_data.labels[node_index].item()].update({node_index: node_class_distance.item()})
@@ -161,7 +157,7 @@ def find_topk_nodes_with_possibility(graph_data, node_num, model, type):
     elif type == 'overall':
         node_possibilities = dict()
         for node_index in graph_data.benign_train_nodes_index:
-            node_poss = possibility[node_index]
+            node_poss = possibility[node_index].detach().cpu()
             sorted_node_poss, indices = torch.sort(node_poss, descending=True)
             node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
             node_possibilities.update({node_index: node_class_distance.item()})

@@ -40,7 +40,6 @@ def batch_ownver(args, trial_num, unit_test_num):
     independent_arch = ['sage']
     hidden_layers_num = [1, 2]
     model_layers = [256, 512, 1024, 2048]
-    verification_num = [5]
     
     nwm_ind_correct_num_list, nwm_ind_false_num_list = list(), list()
     nwm_ext_correct_num_list, nwm_ext_false_num_list = list(), list()
@@ -66,8 +65,6 @@ def batch_ownver(args, trial_num, unit_test_num):
         for each_class_nodes in watermark_nodes:
             measure_nodes += each_class_nodes
         
-        setting_num = random.choice(verification_num)
-        args.verification_train_num = setting_num
         
         nwm_pair_list, wm_pair_list = list(), list()
         # test with non-watermark model
