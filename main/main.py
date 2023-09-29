@@ -39,7 +39,7 @@ def ownver(args):
 def batch_ownver(args, trial_num, unit_test_num):
     independent_arch = ['sage']
     hidden_layers_num = [1, 2]
-    model_layers = [256, 512, 1024, 2048]
+    model_layers = [24, 48, 96, 192, 384, 768]
     
     nwm_ind_correct_num_list, nwm_ind_false_num_list = list(), list()
     nwm_ext_correct_num_list, nwm_ext_false_num_list = list(), list()
@@ -74,7 +74,7 @@ def batch_ownver(args, trial_num, unit_test_num):
             distance_pair = verification.measure_logits(logits)
             nwm_pair_list.append(distance_pair)
         nwm_classifier_model = verification.train_classifier(nwm_pair_list, 'flatten')
-        save_path = '../temp_results/model_states/nonwatermark_classifiers/exp_1/' + 'model' + str(trial_epoch) + '.pt'
+        # save_path = '../temp_results/model_states/nonwatermark_classifiers/exp_1/' + 'model' + str(trial_epoch) + '.pt'
         # torch.save(nwm_classifier_model.state_dict(), save_path)
         #the number of independent models predicted to 0, of independent models predicted to 1, of extraction models predicted to 0, of extraction models predicted to 1
         nwm_sta0, nwm_sta1, nwm_sta2, nwm_sta3 = batch_unit_test(args, original_graph_data, original_model, nwm_classifier_model, measure_nodes, unit_test_num, 'nonwatermark')
@@ -90,7 +90,7 @@ def batch_ownver(args, trial_num, unit_test_num):
             distance_pair = verification.measure_logits(logits)
             wm_pair_list.append(distance_pair)
         wm_classifier_model = verification.train_classifier(wm_pair_list, 'flatten')
-        save_path = '../temp_results/model_states/watermark_classifiers/exp_1/' + 'model' + str(trial_epoch) + '.pt'
+        # save_path = '../temp_results/model_states/watermark_classifiers/exp_1/' + 'model' + str(trial_epoch) + '.pt'
         # torch.save(wm_classifier_model.state_dict(), save_path)
         wm_sta0, wm_sta1, wm_sta2, wm_sta3 = batch_unit_test(args, original_graph_data, watermark_model, wm_classifier_model, measure_nodes, unit_test_num, 'watermark')
         wm_ind_correct_num_list.append(wm_sta0)
@@ -122,7 +122,7 @@ def batch_unit_test(args, graph_data, watermark_model, classifier_model, measure
     independent_arch = ['gat', 'gcn']
     extraction_arch = ['gatExtract', 'gcnExtract']
     hidden_layers_num = [1, 2, 3]
-    model_layers = [16, 32, 64, 128, 256, 512, 1024, 2048]
+    model_layers = [32, 64, 128, 256, 512, 1024]
     
     overall_ind_pred0_num, overall_ind_pred1_num = 0, 0
     overall_ext_pred0_num, overall_ext_pred1_num = 0, 0
@@ -150,8 +150,8 @@ def batch_unit_test(args, graph_data, watermark_model, classifier_model, measure
         ind_pred0_num, ind_pred1_num = 0, 0
         ext_pred0_num, ext_pred1_num = 0, 0
         for _ in range(5):
-            ind_pred = verification.owner_verify(graph_data, watermark_model, test_independent_model, classifier_model, measure_nodes)
-            ext_pred = verification.owner_verify(graph_data, watermark_model, test_extraction_model, classifier_model, measure_nodes)
+            ind_pred = verification.owner_verify(graph_data, test_independent_model, classifier_model, measure_nodes)
+            ext_pred = verification.owner_verify(graph_data, test_extraction_model, classifier_model, measure_nodes)
             if ind_pred == 0:
                 ind_pred0_num += 1
             else:

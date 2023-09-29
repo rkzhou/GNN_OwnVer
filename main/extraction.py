@@ -149,7 +149,7 @@ def train_extraction_model(args, data):
             else:
                 train_acc_diff = (accuracy - last_train_acc) / last_train_acc * 100
                 train_fide_diff = (fidelity - last_train_fide) / last_train_fide * 100
-                if train_acc_diff <= 0.5 and train_fide_diff <= 0.5:
+                if train_acc_diff <= 0.1 and train_fide_diff <= 0.1: # 0.1%
                     break
                 else:
                     last_train_acc = accuracy

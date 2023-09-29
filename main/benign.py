@@ -61,7 +61,7 @@ def normal_train(args, graph_data):
                 last_train_acc = train_acc
             else:
                 train_acc_diff = (train_acc - last_train_acc) / last_train_acc * 100
-                if train_acc_diff <= 0.5: #0.5%
+                if train_acc_diff <= 0.1: #0.1%
                     break
                 else:
                     last_train_acc = train_acc

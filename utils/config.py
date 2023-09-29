@@ -6,9 +6,9 @@ def add_data_group(group):
     group.add_argument('--random_seed', type=int, default=0)
     group.add_argument('--verification_train_num', type=int, default=10)
     group.add_argument('--mask_node_num', type=int, default=10)
-    group.add_argument('--mask_feat_num', type=int, default=0)
+    group.add_argument('--mask_feat_num', type=int, default=100)
     group.add_argument('--mask_node_type', type=str, default='each_class')
-    group.add_argument('--mask_feat_type', type=str, default='random')
+    group.add_argument('--mask_feat_type', type=str, default='overall_importance')
 
 
 def add_benign_model_group(group):

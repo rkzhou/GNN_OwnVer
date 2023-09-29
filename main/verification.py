@@ -54,7 +54,7 @@ def train_models(args, graph_data, watermark_model):
     independent_arch = ['sage']
     extraction_arch = ['sageExtract']
     hidden_layers_num = [1, 2]
-    model_layers = [256, 512, 1024, 2048]
+    model_layers = [24, 48, 96, 192, 384, 768]
 
     selected_independent_arch = random.choice(independent_arch)
     selected_independent_layers_num = random.choice(hidden_layers_num)
@@ -118,7 +118,7 @@ def train_classifier(distance_pairs:list, type):
     elif type == 'flatten':
         processed_data = preprocess_data_flatten(distance_pairs)
     dataset = utils.datareader.DistanceData(processed_data['label0'], processed_data['label1'])
-    dataloader = DataLoader(dataset, batch_size=8, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
     
     hidden_layers = [128, 32]
     model = mlp_nn(dataset.data.shape[1], hidden_layers)
@@ -145,43 +145,36 @@ def train_classifier(distance_pairs:list, type):
 
         if (epoch_index+1) % 100 == 0:
             acc = correct / len(dataset) * 100
-            print(acc)
+            print('Ownership verification classifier accuracy:', acc)
 
     
     return model
         
-def owner_verify(graph_data, watermark_model, suspicious_model, verifier_model, measure_nodes):
+def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
     
-    watermark_model.to(device)
     suspicious_model.to(device)
-    watermark_model.eval()
     suspicious_model.eval()
     
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-    _, watermark_output = watermark_model(input_data)
     _, suspicious_output = suspicious_model(input_data)
 
     softmax = torch.nn.Softmax(dim=1)
-    watermark_logits = softmax(watermark_output)
     suspicious_logits = softmax(suspicious_output)
 
     if measure_nodes != None:
-        watermark_logits = watermark_logits[measure_nodes].detach().cpu()
         suspicious_logits = suspicious_logits[measure_nodes].detach().cpu()
 
-    watermark_var = torch.var(watermark_logits, axis=1)
     suspicious_var = torch.var(suspicious_logits, axis=1)
-    distance = watermark_var - suspicious_var
-    distance = torch.flatten(distance).view(1, -1)
+    suspicious_var = torch.flatten(suspicious_var).view(1, -1)
 
     verifier_model.to(device)
     verifier_model.eval()
 
-    inputs = distance.to(device)
+    inputs = suspicious_var.to(device)
     outputs = verifier_model(inputs)
     _, predictions = torch.max(outputs.data, 1)
     
