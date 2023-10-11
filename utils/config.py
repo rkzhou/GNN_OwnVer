@@ -3,10 +3,10 @@ import argparse
 def add_data_group(group):
     group.add_argument('--dataset', type=str, default='Cora_ML', help="used dataset")
     group.add_argument('--data_path', type=str, default='../dataset', help="the directory used to save dataset")
+    group.add_argument('--task_type', type=str, default='transductive')
     group.add_argument('--random_seed', type=int, default=0)
-    group.add_argument('--verification_train_num', type=int, default=10)
-    group.add_argument('--mask_node_num', type=int, default=10)
-    group.add_argument('--mask_feat_num', type=int, default=100)
+    group.add_argument('--mask_node_num', type=int, default=30)
+    group.add_argument('--mask_feat_num', type=int, default=300)
     group.add_argument('--mask_node_type', type=str, default='each_class')
     group.add_argument('--mask_feat_type', type=str, default='overall_importance')
 
@@ -24,10 +24,12 @@ def add_benign_model_group(group):
 def add_backdoor_model_group(group):
     group.add_argument('--backdoor_train_node_ratio', type=float, default=0.15)
     group.add_argument('--backdoor_test_node_ratio', type=float, default=0.1)
-    group.add_argument('--backdoor_feature_num', type=float, default=35)
+    group.add_argument('--backdoor_feature_num', type=float, default=500)
     group.add_argument('--backdoor_target_label', type=int, default=6)
     group.add_argument('--backdoor_train_epochs', type=int, default=1000)
     group.add_argument('--backdoor_lr', type=float, default=0.001)
+    group.add_argument('--backdoor_lr_decay_steps', nargs='+', default=[500, 800], type=int)
+    group.add_argument('--backdoor_weight_decay', type=float, default=5e-4)
 
 
 def add_extraction_model_group(group):

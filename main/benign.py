@@ -33,6 +33,7 @@ def normal_train(args, graph_data):
     loss_fn = torch.nn.CrossEntropyLoss()
     predict_fn = lambda output: output.max(1, keepdim=True)[1]
     optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr)
+    # scheduler = lr_scheduler.MultiStepLR(optimizer, args.benign_lr_decay_steps, gamma=0.1)
 
     last_train_acc = 0.0
     for epoch in tqdm(range(args.benign_train_epochs)):
@@ -44,9 +45,10 @@ def normal_train(args, graph_data):
         loss = loss_fn(output[gdata.benign_train_mask], labels[gdata.benign_train_mask])
         loss.backward()
         optimizer.step()
+        # scheduler.step()
 
         train_correct_num = 0
-        if (epoch + 1) % 50 == 0:
+        if (epoch + 1) % 100 == 0:
             _, output = gnn_model(input_data)
             pred = predict_fn(output)
             train_pred = pred[gdata.benign_train_mask]
@@ -61,7 +63,7 @@ def normal_train(args, graph_data):
                 last_train_acc = train_acc
             else:
                 train_acc_diff = (train_acc - last_train_acc) / last_train_acc * 100
-                if train_acc_diff <= 0.1: #0.1%
+                if train_acc_diff <= 0.5: #0.5%
                     break
                 else:
                     last_train_acc = train_acc
@@ -76,9 +78,9 @@ def normal_train(args, graph_data):
         if test_pred[i, 0] == test_labels[i]:
             test_correct_num += 1
     test_acc = test_correct_num / test_pred.shape[0] * 100
-    print('Testing accuracy is %.4f' % (test_acc))
+    save_test_acc = round(test_acc, 2)
     
-    return gdata, gnn_model
+    return gdata, gnn_model, save_test_acc
 
 
 def antidistill_train(args, gnn_model, bkd_data, bkd_train_node_index, bkd_test_node_index):
@@ -171,11 +173,11 @@ def get_possibility_variance(graph_data, gnn_model, measure_nodes):
 
 def run(args, given_graph_data=None, given_bkd_data=None):
     if args.benign_train_method == 'normal':
-        graph_data, gnn_model = normal_train(args, given_graph_data)
+        graph_data, gnn_model, test_acc = normal_train(args, given_graph_data)
     elif args.benign_train_method == 'anti_distill':
         graph_data, gnn_model = antidistill_train(args, given_bkd_data)
 
-    return graph_data, gnn_model
+    return graph_data, gnn_model, test_acc
 
 
 if __name__ == '__main__':

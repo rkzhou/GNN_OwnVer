@@ -18,6 +18,7 @@ def mask_graph_data(args, graph_data, model):
     else:
         if args.mask_feat_type == 'random':
             topk_features = list(i for i in range(graph_data.feat_dim))
+            # random.seed(args.feature_random_seed)
             random.shuffle(topk_features)
             topk_features = topk_features[:args.mask_feat_num]
         elif args.mask_feat_type == 'overall_importance':

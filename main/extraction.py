@@ -49,6 +49,10 @@ def evaluate_target_response(graph_data, model, response:str):
 
 def train_extraction_model(args, data):
     graph_data, train_emb, train_outputs, test_outputs = data
+    softmax = torch.nn.Softmax(dim=1)
+    train_outputs = softmax(train_outputs)
+    # train_outputs = F.one_hot(torch.argmax(train_outputs, dim=1), train_outputs.shape[1]).float()
+
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -69,10 +73,10 @@ def train_extraction_model(args, data):
         extraction_model = model.extraction_models.GatExtract(in_dim, out_dim, hidden_dim=args.extraction_hidden_dim)
     extraction_model = extraction_model.to(device)
 
-    loss_fcn = torch.nn.MSELoss()
-    loss_clf = torch.nn.CrossEntropyLoss()
+    loss_fn = torch.nn.CrossEntropyLoss()
 
     optimizer_embedding = torch.optim.Adam(extraction_model.parameters(), lr=args.extraction_lr)
+    # scheduler_embedding = lr_scheduler.MultiStepLR(optimizer_embedding, args.extraction_lr_decay_steps, gamma=0.1)
 
     clf = None
     if args.extraction_method == 'white_box':
@@ -93,35 +97,37 @@ def train_extraction_model(args, data):
         extraction_embeddings, extraction_outputs = extraction_model(input_data)
         part_embeddings = extraction_embeddings[graph_data.extraction_train_nodes_index]
         part_outputs = extraction_outputs[graph_data.extraction_train_nodes_index]
+        part_outputs = softmax(part_outputs)
         
         if args.extraction_method == 'white_box':
             optimizer_embedding.zero_grad()
             optimizer_classification.zero_grad()
-            loss_emb = torch.sqrt(loss_fcn(part_embeddings, train_emb))
+            loss_emb = torch.sqrt(loss_fn(part_embeddings, train_emb))
             loss_emb.backward()
             optimizer_embedding.step()
 
             outputs = clf(part_embeddings.detach())
             train_labels = predict_fn(train_outputs)
             train_labels = torch.flatten(train_labels)
-            loss_out = loss_clf(outputs, train_labels)
+            loss_out = loss_fn(outputs, train_labels)
             loss_out.backward()
             optimizer_classification.step()
         elif args.extraction_method == 'black_box':
             optimizer_embedding.zero_grad()
             if args.extraction_type == 'full':
-                loss_emb = loss_fcn(part_outputs, train_outputs)
+                loss_emb = loss_fn(part_outputs, train_outputs)
                 loss_emb.backward()
             elif args.extraction_type == 'partial':
-                distill_loss = loss_fcn(part_outputs, train_outputs)
+                distill_loss = loss_fn(part_outputs, train_outputs)
                 labels = graph_data.labels[graph_data.extraction_train_nodes_index]
 
-                classify_loss = loss_clf(part_outputs, labels)
+                classify_loss = loss_fn(part_outputs, labels)
                 total_loss = args.extraction_ratio * distill_loss + (1.0-args.extraction_ratio) * classify_loss
                 total_loss.backward()
             optimizer_embedding.step()
+            # scheduler_embedding.step()
 
-        if (epoch + 1) % 50 == 0:
+        if (epoch + 1) % 100 == 0:
             extraction_model.eval()
             if args.extraction_method == 'white_box':
                 clf.eval()
@@ -149,7 +155,7 @@ def train_extraction_model(args, data):
             else:
                 train_acc_diff = (accuracy - last_train_acc) / last_train_acc * 100
                 train_fide_diff = (fidelity - last_train_fide) / last_train_fide * 100
-                if train_acc_diff <= 0.1 and train_fide_diff <= 0.1: # 0.1%
+                if train_acc_diff <= 0.5 and train_fide_diff <= 0.5: # 0.5%
                     break
                 else:
                     last_train_acc = accuracy
@@ -172,10 +178,10 @@ def train_extraction_model(args, data):
             fide_correct += 1
     accuracy = acc_correct * 100.0 / len(graph_data.test_nodes_index)
     fidelity = fide_correct * 100.0 / test_outputs.shape[0]
-    print('Accuracy of model extraction is {:.4f} and fidelity is {:.4f}'.format(accuracy, fidelity))
-    
+    save_acc = round(accuracy, 2)
+    save_fide = round(fidelity, 2)
 
-    return extraction_model, clf
+    return extraction_model, clf, save_acc, save_fide
 
 
 def run(args, graph_data, original_model):
@@ -183,9 +189,9 @@ def run(args, graph_data, original_model):
     train_outputs = evaluate_target_response(graph_data, original_model, 'train_outputs')
     test_outputs = evaluate_target_response(graph_data, original_model, 'test_outputs')
     extraction_data = graph_data, train_emb, train_outputs, test_outputs
-    extraction_model = train_extraction_model(args, extraction_data)
+    extraction_model, _, extraction_acc, extraction_fide = train_extraction_model(args, extraction_data)
 
-    return extraction_model
+    return extraction_model, extraction_acc, extraction_fide
 
 
 
