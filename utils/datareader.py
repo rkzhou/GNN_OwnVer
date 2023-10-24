@@ -66,6 +66,10 @@ class GraphData(torch.utils.data.Dataset):
             self.benign_train_nodes_index += each_class_nodes_index[i][:benign_train_size]
             self.extraction_train_nodes_index += each_class_nodes_index[i][benign_train_size:(benign_train_size+extraction_train_size)]
             self.test_nodes_index += each_class_nodes_index[i][(benign_train_size+extraction_train_size):]
+
+            self.benign_train_nodes_index.sort()
+            self.extraction_train_nodes_index.sort()
+            self.test_nodes_index.sort()
         
 
         self.benign_train_mask, self.extraction_train_mask, self.test_mask = torch.zeros(self.node_num), torch.zeros(self.node_num), torch.zeros(self.node_num)

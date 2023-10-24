@@ -10,83 +10,65 @@ from sklearn.ensemble import RandomForestClassifier
 
 
 def mask_graph_data(args, graph_data, model):
-    topk_nodes = find_topk_nodes_with_possibility(graph_data, args.mask_node_num, model, args.mask_node_type)
+    mask_nodes = find_mask_nodes(args, graph_data, model)
 
     new_graph_data = copy.deepcopy(graph_data)
     if args.mask_node_num == 0 or args.mask_feat_num == 0:
         pass
     else:
         if args.mask_feat_type == 'random':
-            topk_features = list(i for i in range(graph_data.feat_dim))
+            mask_features = list(i for i in range(graph_data.feat_dim))
             # random.seed(args.feature_random_seed)
-            random.shuffle(topk_features)
-            topk_features = topk_features[:args.mask_feat_num]
+            random.shuffle(mask_features)
+            mask_features = mask_features[:args.mask_feat_num]
         elif args.mask_feat_type == 'overall_importance':
-            topk_features = find_topk_features_overall(graph_data, args.mask_feat_num)
+            mask_features = find_mask_features_overall(graph_data, args.mask_feat_num)
         elif args.mask_feat_type == 'individual_importance':
-            topk_features = find_topk_features_individual(graph_data, model, topk_nodes, args.mask_feat_num)
+            mask_features = find_mask_features_individual(graph_data, model, mask_nodes, args.mask_feat_num)
         
         # flip the selected features of chosen nodes
         if args.mask_feat_type == 'random' or args.mask_feat_type == 'overall_importance':
-            for node_class in topk_nodes:
+            for node_class in mask_nodes:
                 for node_index in node_class:
                     for i in range(args.mask_feat_num):
-                        new_graph_data.features[node_index][topk_features[i]] = (new_graph_data.features[node_index][topk_features[i]] + 1) % 2
+                        new_graph_data.features[node_index][mask_features[i]] = (new_graph_data.features[node_index][mask_features[i]] + 1) % 2
         elif args.mask_feat_type == 'individual_importance':
-            for node_index, feat_list in topk_features.items():
+            for node_index, feat_list in mask_features.items():
                 for feat_index in feat_list:
                     new_graph_data.features[node_index, feat_index] = (new_graph_data.features[node_index, feat_index] + 1) % 2
     
-    return new_graph_data, topk_nodes
+    return new_graph_data, mask_nodes
 
 
-def measure_posteriors(graph_data, specific_nodes, emb_model, clf_model=None):
+def measure_posteriors(args, graph_data, measure_node_class, measure_model):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
     
-    emb_model.to(device)
-    emb_model.eval()
-    #clf_model.eval()
+    measure_model.to(device)
+    measure_model.eval()
     
-    input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-    embeddings, outputs = emb_model(input_data)
-    #outputs = F.softmax(outputs, dim=1)
-    #outputs = clf_model(embeddings.detach())
+    if args.task_type == 'transductive':
+        input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
+    elif args.task_type == 'inductive':
+        input_data = graph_data[0].features.to(device), graph_data[0].adjacency.to(device)
+    _, outputs = measure_model(input_data)
     
-    if specific_nodes == None:
-        train_posteriors = outputs[graph_data.benign_train_mask]
-        test_posteriors = outputs[graph_data.test_mask]
-        
-        softmax = torch.nn.Softmax(dim=1)
-        train_posteriors = softmax(train_posteriors).detach().cpu()
-        test_posteriors = softmax(test_posteriors).detach().cpu()
-        
-        train_var = torch.var(train_posteriors, axis=1)
-        train_var = torch.mean(train_var)
-        test_var = torch.var(test_posteriors, axis=1)
-        test_var = torch.mean(test_var)
-        print(train_var, test_var)
-    else:
-        measure_nodes = list()
-        for node_class in specific_nodes:
-            measure_nodes = measure_nodes + node_class
-        # train_rest_nodes = list(set(graph_data.benign_train_nodes_index) - set(watermark_nodes))
-        # test_rest_nodes = list(set(graph_data.test_nodes_index) - set(watermark_nodes))
+    measure_nodes = list()
+    for node_class in measure_node_class:
+        measure_nodes = measure_nodes + node_class
 
-        node_posteriors = outputs[measure_nodes]
-        softmax = torch.nn.Softmax(dim=1)
-        node_posteriors = softmax(node_posteriors).detach().cpu()
+    node_posteriors = outputs[measure_nodes]
+    softmax = torch.nn.Softmax(dim=1)
+    node_posteriors = softmax(node_posteriors).detach().cpu()
 
-        posterior_var = torch.var(node_posteriors, dim=1)
-        var_mean = torch.mean(posterior_var)
-        print(var_mean)
-        
-        return node_posteriors
+    posterior_var = torch.var(node_posteriors, dim=1)
+    var_mean = torch.mean(posterior_var)
+    print(var_mean)
 
 
-def find_topk_nodes_with_loss(graph_data, node_num, model, type):
+def find_mask_nodes(args, graph_data, model):
     # find the nodes from each class with least loss
     if torch.cuda.is_available():
         device = torch.device('cuda')
@@ -94,59 +76,28 @@ def find_topk_nodes_with_loss(graph_data, node_num, model, type):
         device = torch.device('cpu')
     
     model.eval()
-    loss_fn = F.cross_entropy
-    input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-    labels = graph_data.labels.to(device)
-    _, output = model(input_data)
-
-    if type == 'each_class':
-        node_losses = [dict() for _ in range(graph_data.class_num)]
-        for node_index in graph_data.benign_train_nodes_index:
-            loss = loss_fn(output[node_index], labels[node_index]).detach().cpu()
-            node_losses[graph_data.labels[node_index].item()].update({node_index: loss.item()})
     
-        new_node_losses = list()
-        for class_node_losses in node_losses:
-            class_node_losses = dict(sorted(class_node_losses.items(), key=lambda x:x[1], reverse=False)) # False will sort ascending, True will sort descending.
-            new_node_losses.append(class_node_losses)
-    
-        topk_nodes = list()
-        for i in range(graph_data.class_num):
-            topk_nodes.append(list(new_node_losses[i].keys())[:node_num])
-    elif type == 'overall':
-        node_losses = dict()
-        for node_index in graph_data.benign_train_nodes_index:
-            loss = loss_fn(output[node_index], labels[node_index]).detach().cpu()
-            node_losses.update({node_index: loss.item()})
-        
-        node_losses = dict(sorted(node_losses.items(), key=lambda x:x[1], reverse=False))
-        topk_nodes = list()
-        topk_nodes.append(list(node_losses.keys())[:node_num])
-    
-    return topk_nodes
-
-
-def find_topk_nodes_with_possibility(graph_data, node_num, model, type):
-    # find the nodes from each class with least loss
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
-    
-    model.eval()
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
     _, output = model(input_data)
     softmax = torch.nn.Softmax(dim=1)
     possibility = softmax(output)
 
-    if type == 'each_class':
+    if args.mask_node_type == 'each_class':
         node_possibilities = [dict() for _ in range(graph_data.class_num)]
-        for node_index in graph_data.benign_train_nodes_index:
-            node_poss = possibility[node_index].detach().cpu()
-            sorted_node_poss, indices = torch.sort(node_poss, descending=True) # elements are sorted in descending order by value
-            node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
-            node_possibilities[graph_data.labels[node_index].item()].update({node_index: node_class_distance.item()})
+        if args.task_type == 'transductive':
+            for node_index in graph_data.benign_train_nodes_index:
+                node_poss = possibility[node_index].detach().cpu()
+                sorted_node_poss, indices = torch.sort(node_poss, descending=True) # elements are sorted in descending order by value
+                node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
+                node_possibilities[graph_data.labels[node_index].item()].update({node_index: node_class_distance.item()})
     
+        elif args.task_type == 'inductive':
+            for node_index in range(graph_data.node_num):
+                node_poss = possibility[node_index].detach().cpu()
+                sorted_node_poss, indices = torch.sort(node_poss, descending=True)
+                node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
+                node_possibilities[graph_data.labels[node_index].item()].update({node_index: node_class_distance.item()})
+
         new_node_possibilities = list()
         for class_node_possibility in node_possibilities:
             class_node_possibility = dict(sorted(class_node_possibility.items(), key=lambda x:x[1], reverse=True))
@@ -154,23 +105,30 @@ def find_topk_nodes_with_possibility(graph_data, node_num, model, type):
     
         topk_nodes = list()
         for i in range(graph_data.class_num):
-            topk_nodes.append(list(new_node_possibilities[i].keys())[:node_num])
-    elif type == 'overall':
+            topk_nodes.append(list(new_node_possibilities[i].keys())[:args.mask_node_num])
+    elif args.mask_node_type == 'overall':
         node_possibilities = dict()
-        for node_index in graph_data.benign_train_nodes_index:
-            node_poss = possibility[node_index].detach().cpu()
-            sorted_node_poss, indices = torch.sort(node_poss, descending=True)
-            node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
-            node_possibilities.update({node_index: node_class_distance.item()})
+        if args.task_type == 'transductive':
+            for node_index in graph_data.benign_train_nodes_index:
+                node_poss = possibility[node_index].detach().cpu()
+                sorted_node_poss, indices = torch.sort(node_poss, descending=True)
+                node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
+                node_possibilities.update({node_index: node_class_distance.item()})
+        elif args.task_type == 'inductive':
+            for node_index in range(graph_data.node_num):
+                node_poss = possibility[node_index].detach().cpu()
+                sorted_node_poss, indices = torch.sort(node_poss, descending=True)
+                node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
+                node_possibilities.update({node_index: node_class_distance.item()})
         
         node_possibilities = dict(sorted(node_possibilities.items(), key=lambda x:x[1], reverse=False))
         topk_nodes = list()
-        topk_nodes.append(list(node_possibilities.keys())[:node_num])
+        topk_nodes.append(list(node_possibilities.keys())[:args.mask_node_num])
     
     return topk_nodes
 
 
-def find_topk_features_overall(graph_data, feat_num):
+def find_mask_features_overall(graph_data, feat_num):
     X = graph_data.features.numpy()
     Y = graph_data.labels.numpy()
 
@@ -187,7 +145,7 @@ def find_topk_features_overall(graph_data, feat_num):
     return topk_features
 
 
-def find_topk_features_individual(graph_data, gnn_model, node_list, feat_num):
+def find_mask_features_individual(graph_data, gnn_model, node_list, feat_num):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:

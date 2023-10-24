@@ -65,7 +65,7 @@ def get_boundary_nodes(graph_data, model, threshold, measure_part):
     return boundary_node_index
 
 
-def eval_node_label_change(graph_data, original_model, mask_model, portion_num):
+def eval_node_label_change(graph_data, original_model, mask_model, portion_num=1):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -120,54 +120,129 @@ def eval_node_label_change(graph_data, original_model, mask_model, portion_num):
         end_pos = (i + 1) * test_portion_node_num
         test_each_portion_node_index.update({i:list(test_node_possibilities.keys())[start_pos:end_pos]})
     
-    # check how many nodes' lables are changed in each portion
-    each_portion_train_nodes_changed_num, each_portion_test_nodes_changed_num = list(), list()
-    original_each_portion_train_nodes_labels_distribute, original_each_portion_test_nodes_labels_distribute = dict(), dict() #True num, False num
-    mask_each_portion_train_nodes_labels_distribute, mask_each_portion_test_nodes_labels_distribute = dict(), dict()
+    # # check how many nodes' lables are changed in each portion
+    # each_portion_train_nodes_changed_num, each_portion_test_nodes_changed_num = list(), list()
+    # original_each_portion_train_nodes_labels_distribute, original_each_portion_test_nodes_labels_distribute = dict(), dict() #True num, False num
+    # mask_each_portion_train_nodes_labels_distribute, mask_each_portion_test_nodes_labels_distribute = dict(), dict()
+    # for portion_index, node_list in train_each_portion_node_index.items():
+    #     changed_num = 0
+    #     original_true_num, original_false_num = 0, 0
+    #     mask_true_num, mask_false_num = 0, 0
+    #     for node_index in node_list:
+            
+    #         if original_pred[node_index] != mask_pred[node_index]:
+    #             changed_num += 1
+
+    #         if original_pred[node_index] == graph_data.labels[node_index]:
+    #             original_true_num += 1
+    #         else:
+    #             original_false_num += 1
+            
+    #         if mask_pred[node_index] == graph_data.labels[node_index]:
+    #             mask_true_num += 1
+    #         else:
+    #             mask_false_num += 1
+        
+    #     each_portion_train_nodes_changed_num.append(changed_num)
+    #     original_each_portion_train_nodes_labels_distribute.update({portion_index:[original_true_num, original_false_num]})
+    #     mask_each_portion_train_nodes_labels_distribute.update({portion_index:[mask_true_num, mask_false_num]})
+    
+    # for portion_index, node_list in test_each_portion_node_index.items():
+    #     changed_num = 0
+    #     original_true_num, original_false_num = 0, 0
+    #     mask_true_num, mask_false_num = 0, 0
+    #     for node_index in node_list:
+    #         if original_pred[node_index] != mask_pred[node_index]:
+    #             changed_num += 1
+
+    #         if original_pred[node_index] == graph_data.labels[node_index]:
+    #             original_true_num += 1
+    #         else:
+    #             original_false_num += 1
+            
+    #         if mask_pred[node_index] == graph_data.labels[node_index]:
+    #             mask_true_num += 1
+    #         else:
+    #             mask_false_num += 1
+        
+    #     each_portion_test_nodes_changed_num.append(changed_num)
+    #     original_each_portion_test_nodes_labels_distribute.update({portion_index:[original_true_num, original_false_num]})
+    #     mask_each_portion_test_nodes_labels_distribute.update({portion_index:[mask_true_num, mask_false_num]})
+    
+    # print(each_portion_train_nodes_changed_num)
+    # print(original_each_portion_train_nodes_labels_distribute)
+    # print(mask_each_portion_train_nodes_labels_distribute)
+    
     for portion_index, node_list in train_each_portion_node_index.items():
-        changed_num = 0
-        original_true_num, original_false_num = 0, 0
-        mask_true_num, mask_false_num = 0, 0
+        original_correct_num, original_false_num = 0, 0
+        mask_correct_num, mask_false_num = 0, 0
+        original_correct_index, original_false_index = list(), list()
+        correct_flip_num = 0
+        false_flip_correct_num, false_flip_false_num = 0, 0
         for node_index in node_list:
-            if original_pred[node_index] != mask_pred[node_index]:
-                changed_num += 1
-
             if original_pred[node_index] == graph_data.labels[node_index]:
-                original_true_num += 1
+                original_correct_num += 1
+                original_correct_index.append(node_index)
             else:
                 original_false_num += 1
+                original_false_index.append(node_index)
             
             if mask_pred[node_index] == graph_data.labels[node_index]:
-                mask_true_num += 1
+                mask_correct_num += 1
             else:
                 mask_false_num += 1
+            
+        for node_index in original_correct_index:
+            if mask_pred[node_index] != graph_data.labels[node_index]:
+                correct_flip_num += 1
+            
+        for node_index in original_false_index:
+            if mask_pred[node_index] == graph_data.labels[node_index]:
+                false_flip_correct_num += 1
+            else:
+                false_flip_false_num += 1
         
-        each_portion_train_nodes_changed_num.append(changed_num)
-        original_each_portion_train_nodes_labels_distribute.update({portion_index:[original_true_num, original_false_num]})
-        mask_each_portion_train_nodes_labels_distribute.update({portion_index:[mask_true_num, mask_false_num]})
-    
+        print('original correct number:', original_correct_num)
+        print('original false number:', original_false_num)
+        print('mask correct number:', mask_correct_num)
+        print('mask false number:', mask_false_num)
+        print('original correct flip number:', correct_flip_num)
+        print('original false but flip to correct number:', false_flip_correct_num)
+        print('original false still flip to false number:', false_flip_false_num)
+        
     for portion_index, node_list in test_each_portion_node_index.items():
-        changed_num = 0
-        original_true_num, original_false_num = 0, 0
-        mask_true_num, mask_false_num = 0, 0
+        original_correct_num, original_false_num = 0, 0
+        mask_correct_num, mask_false_num = 0, 0
+        original_correct_index, original_false_index = list(), list()
+        correct_flip_num = 0
+        false_flip_correct_num, false_flip_false_num = 0, 0
         for node_index in node_list:
-            if original_pred[node_index] != mask_pred[node_index]:
-                changed_num += 1
-
             if original_pred[node_index] == graph_data.labels[node_index]:
-                original_true_num += 1
+                original_correct_num += 1
+                original_correct_index.append(node_index)
             else:
                 original_false_num += 1
+                original_false_index.append(node_index)
             
             if mask_pred[node_index] == graph_data.labels[node_index]:
-                mask_true_num += 1
+                mask_correct_num += 1
             else:
                 mask_false_num += 1
+            
+        for node_index in original_correct_index:
+            if mask_pred[node_index] != graph_data.labels[node_index]:
+                correct_flip_num += 1
+            
+        for node_index in original_false_index:
+            if mask_pred[node_index] == graph_data.labels[node_index]:
+                false_flip_correct_num += 1
+            else:
+                false_flip_false_num += 1
         
-        each_portion_test_nodes_changed_num.append(changed_num)
-        original_each_portion_test_nodes_labels_distribute.update({portion_index:[original_true_num, original_false_num]})
-        mask_each_portion_test_nodes_labels_distribute.update({portion_index:[mask_true_num, mask_false_num]})
-    
-    print(each_portion_train_nodes_changed_num)
-    print(original_each_portion_train_nodes_labels_distribute)
-    print(mask_each_portion_train_nodes_labels_distribute)
+        print('original correct number:', original_correct_num)
+        print('original false number:', original_false_num)
+        print('mask correct number:', mask_correct_num)
+        print('mask false number:', mask_false_num)
+        print('original correct flip number:', correct_flip_num)
+        print('original false but flip to correct number:', false_flip_correct_num)
+        print('original false still flip to false number:', false_flip_false_num)

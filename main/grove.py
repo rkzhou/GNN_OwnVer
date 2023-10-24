@@ -21,20 +21,27 @@ def grove_extract_logits(graph_data, measure_nodes, target_model, independent_mo
     surrogate_model.eval()
     
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-    _, target_output = target_model(input_data)
-    _, independent_output = independent_model(input_data)
-    _, surrogate_output = surrogate_model(input_data)
+    # _, target_output = target_model(input_data)
+    # _, independent_output = independent_model(input_data)
+    # _, surrogate_output = surrogate_model(input_data)
+    target_emb, _ = target_model(input_data)
+    independent_emb, _ = independent_model(input_data)
+    surrogate_emb, _ = surrogate_model(input_data)
 
     softmax = torch.nn.Softmax(dim=1)
-    target_logits = softmax(target_output)
-    independent_logits = softmax(independent_output)
-    surrogate_logits = softmax(surrogate_output)
-
-    target_logits = target_logits[measure_nodes].detach().cpu()
-    independent_logits = independent_logits[measure_nodes].detach().cpu()
-    surrogate_logits = surrogate_logits[measure_nodes].detach().cpu()
+    # target_logits = softmax(target_output)
+    # independent_logits = softmax(independent_output)
+    # surrogate_logits = softmax(surrogate_output)
     
-    logits = {'target': target_logits, 'independent': independent_logits, 'surrogate': surrogate_logits}
+
+    # target_logits = target_logits[measure_nodes].detach().cpu()
+    # independent_logits = independent_logits[measure_nodes].detach().cpu()
+    # surrogate_logits = surrogate_logits[measure_nodes].detach().cpu()
+    target_emb = target_emb[measure_nodes].detach().cpu()
+    independent_emb = independent_emb[measure_nodes].detach().cpu()
+    surrogate_emb = surrogate_emb[measure_nodes].detach().cpu()
+    
+    logits = {'target': target_emb, 'independent': independent_emb, 'surrogate': surrogate_emb}
     
     return logits
 
@@ -124,15 +131,19 @@ def owner_verify(graph_data, target_model, suspicious_model, verifier_model, mea
     suspicious_model.eval()
     
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-    _, target_output = target_model(input_data)
-    _, suspicious_output = suspicious_model(input_data)
+    # _, target_output = target_model(input_data)
+    # _, suspicious_output = suspicious_model(input_data)
+    target_emb, _ = target_model(input_data)
+    suspicious_emb, _ = suspicious_model(input_data)
 
     softmax = torch.nn.Softmax(dim=1)
-    target_logits = softmax(target_output)
-    suspicious_logits = softmax(suspicious_output)
+    # target_logits = softmax(target_output)
+    # suspicious_logits = softmax(suspicious_output)
 
-    target_logits = target_logits[measure_nodes].detach().cpu()
-    suspicious_logits = suspicious_logits[measure_nodes].detach().cpu()
+    # target_logits = target_logits[measure_nodes].detach().cpu()
+    # suspicious_logits = suspicious_logits[measure_nodes].detach().cpu()
+    target_logits = target_emb[measure_nodes].detach().cpu()
+    suspicious_logits = suspicious_emb[measure_nodes].detach().cpu()
 
     distance = (target_logits - suspicious_logits).pow(2)
     total_node_num, class_num = distance.shape
@@ -162,14 +173,13 @@ def batch_ownver(args):
 
     shadow_first_layer_dim = [600, 550, 500, 450, 400]
     shadow_second_layer_dim = [300, 250, 200, 150, 100]
-    shadow_independent_model_arch = ['gcn', 'sage', 'gat']
-    shadow_extraction_model_arch = ['gcnExtract', 'sageExtract', 'gatExtract']
+    shadow_independent_model_arch = ['gcn', 'gat', 'sage']
+    shadow_extraction_model_arch = ['gcnExtract', 'gatExtract', 'sageExtract']
     
     ind_correct_num_list, ind_false_num_list = list(), list()
     ext_correct_num_list, ext_false_num_list = list(), list()
 
     original_acc_list = list()
-    mask_acc_list = list()
     shadow_independent_acc_list = list()
     shadow_extraction_acc_list = list()
     shadow_extraction_fide_list = list()
@@ -186,6 +196,7 @@ def batch_ownver(args):
             original_layers = list()
             original_layers.append(i)
             original_layers.append(j)
+            original_layers.append(64)
             original_layers.sort(reverse=True)
 
             args.benign_model = 'gcn'
@@ -206,6 +217,7 @@ def batch_ownver(args):
                     shadow_layers = list()
                     shadow_layers.append(p)
                     shadow_layers.append(q)
+                    shadow_layers.append(64)
                     shadow_layers.sort(reverse=True)
 
                     args.benign_model = random.choice(shadow_independent_model_arch)
@@ -249,14 +261,13 @@ def batch_ownver(args):
     print('recall:', recall)
     print('f1_score:', f1_score)
 
-    # get_stats_of_list(original_acc_list, 'original accuracy:')
-    # get_stats_of_list(mask_acc_list, 'mask accuracy:')
-    # get_stats_of_list(shadow_independent_acc_list, 'shadow independent model accuracy:')
-    # get_stats_of_list(shadow_extraction_acc_list, 'shadow extraction model accuracy:')
-    # get_stats_of_list(shadow_extraction_fide_list, 'shadow extraction model fidelity:')
-    # get_stats_of_list(test_independent_acc_list, 'test independent model accuracy:')
-    # get_stats_of_list(test_extraction_acc_list, 'test extraction model accuracy:')
-    # get_stats_of_list(test_extraction_fide_list, 'test extraction model fidelity:')
+    get_stats_of_list(original_acc_list, 'original accuracy:')
+    get_stats_of_list(shadow_independent_acc_list, 'shadow independent model accuracy:')
+    get_stats_of_list(shadow_extraction_acc_list, 'shadow extraction model accuracy:')
+    get_stats_of_list(shadow_extraction_fide_list, 'shadow extraction model fidelity:')
+    get_stats_of_list(test_independent_acc_list, 'test independent model accuracy:')
+    get_stats_of_list(test_extraction_acc_list, 'test extraction model accuracy:')
+    get_stats_of_list(test_extraction_fide_list, 'test extraction model fidelity:')
         
 
 def batch_unit_test(args, graph_data, target_model, classifier_model, measure_nodes, independent_acc_list, extraction_acc_list, extraction_fide_list):
@@ -277,6 +288,7 @@ def batch_unit_test(args, graph_data, target_model, classifier_model, measure_no
                     test_model_layers = list()
                     test_model_layers.append(p)
                     test_model_layers.append(q)
+                    test_model_layers.append(64)
                     test_model_layers.sort(reverse=True)
 
                     args.benign_hidden_dim = test_model_layers

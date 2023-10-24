@@ -8,52 +8,37 @@ import copy
 import torch.nn.functional as F
 import torch.optim.lr_scheduler as lr_scheduler
 import model.gnn_models
+from torch_geometric.utils import add_self_loops, subgraph
 
 
 
 class Graph_self():
-    def __init__(self, graph_data:utils.datareader.GraphData):
-        edge_list = graph_data.adjacency.tolist()
-        edge_list = self.reconstruct_edge_list(edge_list)
-        self.data = copy.deepcopy(graph_data)
-        self.graph = nx.Graph(edge_list)
-        self.features = copy.deepcopy(graph_data.features).tolist()
-        self.labels = copy.deepcopy(graph_data.labels).tolist()
-        self.class_num = copy.deepcopy(graph_data.class_num)
-        
-    def reconstruct_edge_list(self, edge_list):
-        new_edge_list = list()
-        for i in range(len(edge_list[0])):
-            source_node = edge_list[0][i]
-            target_node = edge_list[1][i]
-            node_pair = tuple([source_node, target_node])
-            new_edge_list.append(node_pair)
-        
-        return new_edge_list
+    def __init__(self, features, edge_index, labels):
+        self.features = copy.deepcopy(features)
+        self.adjacency = copy.deepcopy(edge_index)
+        self.labels = copy.deepcopy(labels)
+        self.node_num = len(self.labels)
+        self.feat_dim = len(self.features[0])
+        self.get_class_num()
+        self.set_adj_mat()
+
+    def get_class_num(self):
+        labels = self.labels.tolist()
+        labels = set(labels)
+        self.class_num = len(labels)
+
+    def set_adj_mat(self):
+        self.adj_matrix = torch.zeros([self.node_num, self.node_num])
+        for i in range(self.node_num):
+            source_node = self.adjacency[0][i]
+            target_node = self.adjacency[1][i]
+            self.adj_matrix[source_node, target_node] = 1
+
+    def __len__(self):
+        return self.node_num
     
-    def find_topk_nodes_with_adj(self, k):
-        # find the top k nodes with the most edges in each class
-        nodes_in_each_class = [list() for _ in range(self.class_num)]
-        for i in self.data.train_nodes_index:
-            nodes_in_each_class[self.labels[i]].append(i)
-        
-        nodes_edges = [dict() for _ in range(self.class_num)]
-        topk_nodes = list()
-        for class_index in range(self.class_num):
-            for node_index in nodes_in_each_class[class_index]:
-                node_edge_num = len(self.graph.edges(node_index))
-                nodes_edges[class_index].update({node_index: node_edge_num})
-        
-        # sort dictionaries with the values
-        new_node_edges = list()
-        for class_node_edges in nodes_edges:
-            class_node_edges = dict(sorted(class_node_edges.items(), key=lambda x:x[1], reverse=True))
-            new_node_edges.append(class_node_edges)
-        
-        for i in range(self.class_num):
-            topk_nodes.append(list(new_node_edges[i].keys())[:k])
-        
-        return topk_nodes
+    def __getitem__(self, index):
+        return [self.features[index], self.adj_matrix[index], self.labels[index]]
     
 
 def sort_features(args, feat_num, graph_data, original_model):
@@ -125,3 +110,24 @@ def sort_features(args, feat_num, graph_data, original_model):
 
     print(chosen_feat)
     return chosen_feat
+
+
+def split_subgraph(graph):
+    temp_edge_index = add_self_loops(graph.adjacency)[0]
+    benign_train_edge_index = subgraph(torch.as_tensor(graph.benign_train_nodes_index), temp_edge_index, relabel_nodes=True)[0]
+    extraction_train_edge_index = subgraph(torch.as_tensor(graph.extraction_train_nodes_index), temp_edge_index, relabel_nodes=True)[0]
+    test_edge_index = subgraph(torch.as_tensor(graph.test_nodes_index), temp_edge_index, relabel_nodes=True)[0]
+
+    benign_train_features = graph.features[graph.benign_train_nodes_index]
+    extraction_train_features = graph.features[graph.extraction_train_nodes_index]
+    test_features = graph.features[graph.test_nodes_index]
+
+    benign_train_labels = graph.labels[graph.benign_train_nodes_index]
+    extraction_train_labels = graph.labels[graph.extraction_train_nodes_index]
+    test_labels = graph.labels[graph.test_nodes_index]
+
+    benign_train_subgraph = Graph_self(benign_train_features, benign_train_edge_index, benign_train_labels)
+    extraction_train_subgraph = Graph_self(extraction_train_features, extraction_train_edge_index, extraction_train_labels)
+    test_subgraph = Graph_self(test_features, test_edge_index, test_labels)
+
+    return benign_train_subgraph, extraction_train_subgraph, test_subgraph

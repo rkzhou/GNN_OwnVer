@@ -21,7 +21,7 @@ class Classification(torch.nn.Module):
         return F.log_softmax(self.fc2(x), dim=1)
 
 
-def evaluate_target_response(graph_data, model, response:str):
+def evaluate_target_response(args, graph_data, model, response:str):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -29,20 +29,41 @@ def evaluate_target_response(graph_data, model, response:str):
 
     model.eval()
     model = model.to(device)
-    
-    input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-    embedding, output = model(input_data)
-    embedding = embedding.detach()
-    output = output.detach()
 
-    if response == 'train_embeddings':
-        target_response = embedding[graph_data.extraction_train_nodes_index]
-    elif response == 'train_outputs':
-        target_response = output[graph_data.extraction_train_nodes_index]
-    elif response == 'test_embeddings':
-        target_response = embedding[graph_data.test_nodes_index]
-    elif response == 'test_outputs':
-        target_response = output[graph_data.test_nodes_index]
+    if args.task_type == 'transductive':    
+        input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
+        embedding, output = model(input_data)
+        embedding = embedding.detach()
+        output = output.detach()
+
+        if response == 'train_embeddings':
+            target_response = embedding[graph_data.extraction_train_nodes_index]
+        elif response == 'train_outputs':
+            target_response = output[graph_data.extraction_train_nodes_index]
+        elif response == 'test_embeddings':
+            target_response = embedding[graph_data.test_nodes_index]
+        elif response == 'test_outputs':
+            target_response = output[graph_data.test_nodes_index]
+    elif args.task_type == 'inductive':
+        extraction_input_data = graph_data[1].features.to(device), graph_data[1].adjacency.to(device)
+        extraction_embedding, extraction_output = model(extraction_input_data)
+        extraction_embedding = extraction_embedding.detach()
+        extraction_output = extraction_output.detach()
+
+        test_input_data = graph_data[2].features.to(device), graph_data[2].adjacency.to(device)
+        test_embedding, test_output = model(test_input_data)
+        test_embedding = test_embedding.detach()
+        test_output = test_output.detach()
+
+        if response == 'train_embeddings':
+            target_response = extraction_embedding
+        elif response == 'train_outputs':
+            target_response = extraction_output
+        elif response == 'test_embeddings':
+            target_response = test_embedding
+        elif response == 'test_outputs':
+            target_response = test_output
+        
         
     return target_response
 
@@ -59,7 +80,11 @@ def train_extraction_model(args, data):
         device = torch.device('cpu')
 
     #prepare model
-    in_dim = graph_data.feat_dim
+    if args.task_type == 'transductive':
+        in_dim = graph_data.feat_dim
+    elif args.task_type == 'inductive':
+        in_dim = graph_data[1].feat_dim
+
     if args.extraction_method == 'white_box':
         out_dim = train_emb.shape[1]
     elif args.extraction_method == 'black_box':
@@ -75,8 +100,8 @@ def train_extraction_model(args, data):
 
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    optimizer_embedding = torch.optim.Adam(extraction_model.parameters(), lr=args.extraction_lr)
-    # scheduler_embedding = lr_scheduler.MultiStepLR(optimizer_embedding, args.extraction_lr_decay_steps, gamma=0.1)
+    optimizer_medium = torch.optim.Adam(extraction_model.parameters(), lr=args.extraction_lr)
+    # scheduler_embedding = lr_scheduler.MultiStepLR(optimizer_medium, args.extraction_lr_decay_steps, gamma=0.1)
 
     clf = None
     if args.extraction_method == 'white_box':
@@ -88,106 +113,182 @@ def train_extraction_model(args, data):
     predict_fn = lambda output: output.max(1, keepdim=True)[1]
     
     last_train_acc, last_train_fide = 0.0, 0.0
-    for epoch in tqdm(range(args.extraction_train_epochs)):
-        extraction_model.train()
-        #clf.train()
-        train_emb = train_emb.to(device)
-        train_outputs = train_outputs.to(device)
-        input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-        extraction_embeddings, extraction_outputs = extraction_model(input_data)
-        part_embeddings = extraction_embeddings[graph_data.extraction_train_nodes_index]
-        part_outputs = extraction_outputs[graph_data.extraction_train_nodes_index]
-        part_outputs = softmax(part_outputs)
+    if args.task_type == 'transductive':
+        for epoch in range(args.extraction_train_epochs):
+            extraction_model.train()
+            #clf.train()
+            train_emb = train_emb.to(device)
+            train_outputs = train_outputs.to(device)
+            input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
+            extraction_embeddings, extraction_outputs = extraction_model(input_data)
+            part_embeddings = extraction_embeddings[graph_data.extraction_train_nodes_index]
+            part_outputs = extraction_outputs[graph_data.extraction_train_nodes_index]
+            part_outputs = softmax(part_outputs)
         
-        if args.extraction_method == 'white_box':
-            optimizer_embedding.zero_grad()
-            optimizer_classification.zero_grad()
-            loss_emb = torch.sqrt(loss_fn(part_embeddings, train_emb))
-            loss_emb.backward()
-            optimizer_embedding.step()
-
-            outputs = clf(part_embeddings.detach())
-            train_labels = predict_fn(train_outputs)
-            train_labels = torch.flatten(train_labels)
-            loss_out = loss_fn(outputs, train_labels)
-            loss_out.backward()
-            optimizer_classification.step()
-        elif args.extraction_method == 'black_box':
-            optimizer_embedding.zero_grad()
-            if args.extraction_type == 'full':
-                loss_emb = loss_fn(part_outputs, train_outputs)
+            if args.extraction_method == 'white_box':
+                optimizer_medium.zero_grad()
+                optimizer_classification.zero_grad()
+                loss_emb = torch.sqrt(loss_fn(part_embeddings, train_emb))
                 loss_emb.backward()
-            elif args.extraction_type == 'partial':
-                distill_loss = loss_fn(part_outputs, train_outputs)
-                labels = graph_data.labels[graph_data.extraction_train_nodes_index]
+                optimizer_medium.step()
 
-                classify_loss = loss_fn(part_outputs, labels)
-                total_loss = args.extraction_ratio * distill_loss + (1.0-args.extraction_ratio) * classify_loss
-                total_loss.backward()
-            optimizer_embedding.step()
-            # scheduler_embedding.step()
+                outputs = clf(part_embeddings.detach())
+                train_labels = predict_fn(train_outputs)
+                train_labels = torch.flatten(train_labels)
+                loss_out = loss_fn(outputs, train_labels)
+                loss_out.backward()
+                optimizer_classification.step()
+            elif args.extraction_method == 'black_box':
+                optimizer_medium.zero_grad()
+                loss = loss_fn(part_outputs, train_outputs)
+                loss.backward()
+                optimizer_medium.step()
+                # scheduler_embedding.step()
 
-        if (epoch + 1) % 100 == 0:
-            extraction_model.eval()
-            if args.extraction_method == 'white_box':
-                clf.eval()
+            if (epoch + 1) % 100 == 0:
+                extraction_model.eval()
+                if args.extraction_method == 'white_box':
+                    clf.eval()
 
-            acc_correct = 0
-            fide_correct = 0
+                acc_correct = 0
+                fide_correct = 0
 
-            embeddings, outputs = extraction_model(input_data)
-            if args.extraction_method == 'white_box':
-                outputs = clf(embeddings.detach())
-            pred = predict_fn(outputs)
-            test_labels = predict_fn(test_outputs)
+                embeddings, outputs = extraction_model(input_data)
+                if args.extraction_method == 'white_box':
+                    outputs = clf(embeddings.detach())
+                pred = predict_fn(outputs)
+                train_labels = predict_fn(train_outputs)
             
-            for i in range(len(graph_data.test_nodes_index)):
-                if pred[graph_data.test_nodes_index[i]] == graph_data.labels[graph_data.test_nodes_index[i]]:
-                    acc_correct += 1
-                if pred[graph_data.test_nodes_index[i]] == test_labels[i]:
-                    fide_correct += 1
+                for i in range(len(graph_data.extraction_train_nodes_index)):
+                    if pred[graph_data.extraction_train_nodes_index[i]] == graph_data.labels[graph_data.extraction_train_nodes_index[i]]:
+                        acc_correct += 1
+                    if pred[graph_data.extraction_train_nodes_index[i]] == train_labels[i]:
+                        fide_correct += 1
 
-            accuracy = acc_correct * 100.0 / len(graph_data.test_nodes_index)
-            fidelity = fide_correct * 100.0 / test_outputs.shape[0]
-            if last_train_acc == 0.0 or last_train_fide == 0.0:
-                last_train_acc = accuracy
-                last_train_fide = fidelity
-            else:
-                train_acc_diff = (accuracy - last_train_acc) / last_train_acc * 100
-                train_fide_diff = (fidelity - last_train_fide) / last_train_fide * 100
-                if train_acc_diff <= 0.5 and train_fide_diff <= 0.5: # 0.5%
-                    break
-                else:
+                accuracy = acc_correct * 100.0 / len(graph_data.extraction_train_nodes_index)
+                fidelity = fide_correct * 100.0 / train_outputs.shape[0]
+                if last_train_acc == 0.0 or last_train_fide == 0.0:
                     last_train_acc = accuracy
                     last_train_fide = fidelity
+                else:
+                    train_acc_diff = (accuracy - last_train_acc) / last_train_acc * 100
+                    train_fide_diff = (fidelity - last_train_fide) / last_train_fide * 100
+                    if train_acc_diff <= 0.5 and train_fide_diff <= 0.5: # 0.5%
+                        break
+                    else:
+                        last_train_acc = accuracy
+                        last_train_fide = fidelity
 
-    extraction_model.eval()
-    if args.extraction_method == 'white_box':
-        clf.eval()
-    acc_correct, fide_correct = 0, 0
-    input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-    embeddings, outputs = extraction_model(input_data)
-    if args.extraction_method == 'white_box':
-        outputs = clf(embeddings.detach())
-    pred = predict_fn(outputs)
-    test_labels = predict_fn(test_outputs)
-    for i in range(len(graph_data.test_nodes_index)):
-        if pred[graph_data.test_nodes_index[i]] == graph_data.labels[graph_data.test_nodes_index[i]]:
-            acc_correct += 1
-        if pred[graph_data.test_nodes_index[i]] == test_labels[i]:
-            fide_correct += 1
-    accuracy = acc_correct * 100.0 / len(graph_data.test_nodes_index)
-    fidelity = fide_correct * 100.0 / test_outputs.shape[0]
-    save_acc = round(accuracy, 2)
-    save_fide = round(fidelity, 2)
+        extraction_model.eval()
+        if args.extraction_method == 'white_box':
+            clf.eval()
+        acc_correct, fide_correct = 0, 0
+        input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
+        embeddings, outputs = extraction_model(input_data)
+        if args.extraction_method == 'white_box':
+            outputs = clf(embeddings.detach())
+        pred = predict_fn(outputs)
+        test_labels = predict_fn(test_outputs)
+        for i in range(len(graph_data.test_nodes_index)):
+            if pred[graph_data.test_nodes_index[i]] == graph_data.labels[graph_data.test_nodes_index[i]]:
+                acc_correct += 1
+            if pred[graph_data.test_nodes_index[i]] == test_labels[i]:
+                fide_correct += 1
+        accuracy = acc_correct * 100.0 / len(graph_data.test_nodes_index)
+        fidelity = fide_correct * 100.0 / test_outputs.shape[0]
+        save_acc = round(accuracy, 2)
+        save_fide = round(fidelity, 2)
+    elif args.task_type == 'inductive':
+        for epoch in range(args.extraction_train_epochs):
+            extraction_model.train()
+            #clf.train()
+            train_emb = train_emb.to(device)
+            train_outputs = train_outputs.to(device)
+            input_data = graph_data[1].features.to(device), graph_data[1].adjacency.to(device)
+            extraction_embeddings, extraction_outputs = extraction_model(input_data)
+            extraction_outputs = softmax(extraction_outputs)
+        
+            if args.extraction_method == 'white_box':
+                optimizer_medium.zero_grad()
+                optimizer_classification.zero_grad()
+                loss_emb = torch.sqrt(loss_fn(extraction_embeddings, train_emb))
+                loss_emb.backward()
+                optimizer_medium.step()
+
+                outputs = clf(extraction_embeddings.detach())
+                train_labels = predict_fn(train_outputs)
+                train_labels = torch.flatten(train_labels)
+                loss_out = loss_fn(outputs, train_labels)
+                loss_out.backward()
+                optimizer_classification.step()
+            elif args.extraction_method == 'black_box':
+                optimizer_medium.zero_grad()
+                loss = loss_fn(extraction_outputs, train_outputs)
+                loss.backward()
+                optimizer_medium.step()
+                # scheduler_embedding.step()
+
+            if (epoch + 1) % 100 == 0:
+                extraction_model.eval()
+                if args.extraction_method == 'white_box':
+                    clf.eval()
+
+                acc_correct = 0
+                fide_correct = 0
+
+                embeddings, outputs = extraction_model(input_data)
+                if args.extraction_method == 'white_box':
+                    outputs = clf(embeddings.detach())
+                pred = predict_fn(outputs)
+                train_labels = predict_fn(train_outputs)
+            
+                for i in range(graph_data[1].node_num):
+                    if pred[i] == graph_data[1].labels[i]:
+                        acc_correct += 1
+                    if pred[i] == train_labels[i]:
+                        fide_correct += 1
+
+                accuracy = acc_correct * 100.0 / graph_data[1].node_num
+                fidelity = fide_correct * 100.0 / train_outputs.shape[0]
+                if last_train_acc == 0.0 or last_train_fide == 0.0:
+                    last_train_acc = accuracy
+                    last_train_fide = fidelity
+                else:
+                    train_acc_diff = (accuracy - last_train_acc) / last_train_acc * 100
+                    train_fide_diff = (fidelity - last_train_fide) / last_train_fide * 100
+                    if train_acc_diff <= 0.5 and train_fide_diff <= 0.5: # 0.5%
+                        break
+                    else:
+                        last_train_acc = accuracy
+                        last_train_fide = fidelity
+
+        extraction_model.eval()
+        if args.extraction_method == 'white_box':
+            clf.eval()
+        acc_correct, fide_correct = 0, 0
+        input_data = graph_data[2].features.to(device), graph_data[2].adjacency.to(device)
+        embeddings, outputs = extraction_model(input_data)
+        if args.extraction_method == 'white_box':
+            outputs = clf(embeddings.detach())
+        pred = predict_fn(outputs)
+        test_labels = predict_fn(test_outputs)
+        for i in range(graph_data[2].node_num):
+            if pred[i] == graph_data[2].labels[i]:
+                acc_correct += 1
+            if pred[i] == test_labels[i]:
+                fide_correct += 1
+        accuracy = acc_correct * 100.0 / graph_data[2].node_num
+        fidelity = fide_correct * 100.0 / test_outputs.shape[0]
+        save_acc = round(accuracy, 2)
+        save_fide = round(fidelity, 2)
 
     return extraction_model, clf, save_acc, save_fide
 
 
 def run(args, graph_data, original_model):
-    train_emb = evaluate_target_response(graph_data, original_model, 'train_embeddings') # we do not use this in black-box extraction setting
-    train_outputs = evaluate_target_response(graph_data, original_model, 'train_outputs')
-    test_outputs = evaluate_target_response(graph_data, original_model, 'test_outputs')
+    train_emb = evaluate_target_response(args, graph_data, original_model, 'train_embeddings') # we do not use this in black-box extraction setting
+    train_outputs = evaluate_target_response(args, graph_data, original_model, 'train_outputs')
+    test_outputs = evaluate_target_response(args, graph_data, original_model, 'test_outputs')
     extraction_data = graph_data, train_emb, train_outputs, test_outputs
     extraction_model, _, extraction_acc, extraction_fide = train_extraction_model(args, extraction_data)
 

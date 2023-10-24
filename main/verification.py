@@ -11,6 +11,7 @@ from tqdm import tqdm
 from model.mlp import mlp_nn
 import boundary
 from statistics import mean
+import time
 
 
 def extract_logits(graph_data, specific_nodes, independent_model, surrogate_model):
@@ -74,7 +75,7 @@ def train_classifier(distance_pairs:list):
     
     processed_data = preprocess_data_flatten(distance_pairs)
     dataset = utils.datareader.VarianceData(processed_data['label0'], processed_data['label1'])
-    dataloader = DataLoader(dataset, batch_size=1, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=10, shuffle=True)
     
     hidden_layers = [128, 64]
     model = mlp_nn(dataset.data.shape[1], hidden_layers)
@@ -83,7 +84,7 @@ def train_classifier(distance_pairs:list):
     epoch_num = 1000
     
     model.to(device)
-    for epoch_index in tqdm(range(epoch_num)):
+    for epoch_index in range(epoch_num):
         model.train()
         for _, (inputs, labels) in enumerate(dataloader):
             optimizer.zero_grad()
@@ -149,11 +150,11 @@ def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes):
 
 
 def batch_ownver(args):
-    original_first_layer_dim = [525, 425]
-    original_second_layer_dim = [375, 300, 225, 150, 75]
+    original_first_layer_dim = [475, 375]
+    original_second_layer_dim = [325, 275, 225, 175, 125]
 
-    shadow_first_layer_dim = [600, 550, 500, 450, 400]
-    shadow_second_layer_dim = [300, 250, 200, 150, 100]
+    shadow_first_layer_dim = [450, 400, 350, 300, 250]
+    shadow_second_layer_dim = [225, 200, 175, 150, 125]
     
     ind_correct_num_list, ind_false_num_list = list(), list()
     ext_correct_num_list, ext_false_num_list = list(), list()
@@ -163,9 +164,10 @@ def batch_ownver(args):
     shadow_independent_acc_list = list()
     shadow_extraction_acc_list = list()
     shadow_extraction_fide_list = list()
-    test_independent_acc_list = list()
-    test_extraction_acc_list = list()
-    test_extraction_fide_list = list()
+    test_independent_acc_list = [list() for _  in range(3)] # gcn, gat, sage
+    test_extraction_acc_list = [list() for _  in range(3)]
+    test_extraction_fide_list = [list() for _ in range(3)]
+    time_list = list()
     
     
     trial_index = 0
@@ -181,10 +183,11 @@ def batch_ownver(args):
             args.benign_model = 'gcn'
             args.benign_hidden_dim = original_layers
         
-        
+            t0 = time.time()
             original_graph_data, original_model, original_model_acc = benign.run(args)
             mask_graph_data, mask_nodes = boundary.mask_graph_data(args, original_graph_data, original_model)
             _, mask_model, mask_model_acc = benign.run(args, mask_graph_data)
+            t1 = time.time()
             original_acc_list.append(original_model_acc)
             mask_acc_list.append(mask_model_acc)
         
@@ -196,6 +199,7 @@ def batch_ownver(args):
             pair_list = list()
         
             # train shadow models
+            t_train = 0
             args.extraction_model = 'gcnExtract'
             for p in shadow_first_layer_dim:
                 for q in shadow_second_layer_dim:
@@ -206,17 +210,29 @@ def batch_ownver(args):
 
                     args.benign_hidden_dim = shadow_layers
                     args.extraction_hidden_dim = shadow_layers
+                    t2 = time.time()
                     _, independent_model, independent_acc = benign.run(args, original_graph_data)
                     extraction_model, extraction_acc, extraction_fide = extraction.run(args, original_graph_data, mask_model)
+                    t3 = time.time()
+                    t_train += (t3 - t2)
 
                     shadow_independent_acc_list.append(independent_acc)
                     shadow_extraction_acc_list.append(extraction_acc)
                     shadow_extraction_fide_list.append(extraction_fide)
 
+                    t2 = time.time()
                     logits = extract_logits(original_graph_data, measure_nodes, independent_model, extraction_model)
                     variance_pair = measure_logits(logits)
+                    t3 = time.time()
+                    t_train += (t3 - t2)
                     pair_list.append(variance_pair)
+            t2 = time.time()
             classifier_model = train_classifier(pair_list)
+            t3 = time.time()
+            t_train += (t3 - t2)
+            t_total = (t1 - t0) + t_train
+            t_total = round(t_total, 3)
+            time_list.append(t_total)
             # save_path = '../temp_results/model_states/watermark_classifiers/exp_1/' + 'model' + str(trial_epoch) + '.pt'
             # torch.save(wm_classifier_model.state_dict(), save_path)
             sta0, sta1, sta2, sta3 = batch_unit_test(args, original_graph_data, mask_model, classifier_model, measure_nodes, test_independent_acc_list, test_extraction_acc_list, test_extraction_fide_list)
@@ -248,51 +264,57 @@ def batch_ownver(args):
     get_stats_of_list(shadow_independent_acc_list, 'shadow independent model accuracy:')
     get_stats_of_list(shadow_extraction_acc_list, 'shadow extraction model accuracy:')
     get_stats_of_list(shadow_extraction_fide_list, 'shadow extraction model fidelity:')
-    get_stats_of_list(test_independent_acc_list, 'test independent model accuracy:')
-    get_stats_of_list(test_extraction_acc_list, 'test extraction model accuracy:')
-    get_stats_of_list(test_extraction_fide_list, 'test extraction model fidelity:')
+    get_stats_of_list(test_independent_acc_list[0], 'test gcn independent model accuracy:')
+    get_stats_of_list(test_independent_acc_list[1], 'test gat independent model accuracy:')
+    get_stats_of_list(test_independent_acc_list[2], 'test sage independent model accuracy:')
+    get_stats_of_list(test_extraction_acc_list[0], 'test gcn extraction model accuracy:')
+    get_stats_of_list(test_extraction_fide_list[0], 'test gcn extraction model fidelity:')
+    get_stats_of_list(test_extraction_acc_list[1], 'test gat extraction model accuracy:')
+    get_stats_of_list(test_extraction_fide_list[1], 'test gat extraction model fidelity:')
+    get_stats_of_list(test_extraction_acc_list[2], 'test sage extraction model accuracy:')
+    get_stats_of_list(test_extraction_fide_list[2], 'test sage extraction model fidelity:')
+    get_stats_of_list(time_list, 'time consuming:')
         
 
 def batch_unit_test(args, graph_data, mask_model, classifier_model, measure_nodes, independent_acc_list, extraction_acc_list, extraction_fide_list):
     independent_arch = ['gcn', 'gat', 'sage']
     extraction_arch = ['gcnExtract', 'gatExtract', 'sageExtract']
-    first_layers_dim = [1280, 1140, 1000]
-    second_layers_dim = [960, 830, 700]
+    first_layers_dim = [425, 375, 325, 275, 225]
+    second_layers_dim = [160, 128, 96, 64, 32]
     
     overall_ind_pred0_num, overall_ind_pred1_num = 0, 0
     overall_ext_pred0_num, overall_ext_pred1_num = 0, 0
     
-    for i in independent_arch:
-        for j in extraction_arch:
-            args.benign_model = i
-            args.extraction_model = j
-            for p in first_layers_dim:
-                for q in second_layers_dim:
-                    test_model_layers = list()
-                    test_model_layers.append(p)
-                    test_model_layers.append(q)
-                    test_model_layers.sort(reverse=True)
+    for i in range(len(independent_arch)):
+        args.benign_model = independent_arch[i]
+        args.extraction_model = extraction_arch[i]
+        for p in first_layers_dim:
+            for q in second_layers_dim:
+                test_model_layers = list()
+                test_model_layers.append(p)
+                test_model_layers.append(q)
+                test_model_layers.sort(reverse=True)
 
-                    args.benign_hidden_dim = test_model_layers
-                    args.extraction_hidden_dim = test_model_layers
-                    _, test_independent_model, test_independent_acc = benign.run(args, graph_data)
-                    test_extraction_model, test_extraction_acc, test_extraction_fide = extraction.run(args, graph_data, mask_model)
+                args.benign_hidden_dim = test_model_layers
+                args.extraction_hidden_dim = test_model_layers
+                _, test_independent_model, test_independent_acc = benign.run(args, graph_data)
+                test_extraction_model, test_extraction_acc, test_extraction_fide = extraction.run(args, graph_data, mask_model)
 
-                    independent_acc_list.append(test_independent_acc)
-                    extraction_acc_list.append(test_extraction_acc)
-                    extraction_fide_list.append(test_extraction_fide)
+                independent_acc_list[i].append(test_independent_acc)
+                extraction_acc_list[i].append(test_extraction_acc)
+                extraction_fide_list[i].append(test_extraction_fide)
 
-                    ind_pred = owner_verify(graph_data, test_independent_model, classifier_model, measure_nodes)
-                    ext_pred = owner_verify(graph_data, test_extraction_model, classifier_model, measure_nodes)
+                ind_pred = owner_verify(graph_data, test_independent_model, classifier_model, measure_nodes)
+                ext_pred = owner_verify(graph_data, test_extraction_model, classifier_model, measure_nodes)
 
-                    if ind_pred == 0:
-                        overall_ind_pred0_num += 1
-                    else:
-                        overall_ind_pred1_num += 1
-                    if ext_pred == 0:
-                        overall_ext_pred0_num += 1
-                    else:
-                        overall_ext_pred1_num += 1
+                if ind_pred == 0:
+                    overall_ind_pred0_num += 1
+                else:
+                    overall_ind_pred1_num += 1
+                if ext_pred == 0:
+                    overall_ext_pred0_num += 1
+                else:
+                    overall_ext_pred1_num += 1
     
     return overall_ind_pred0_num, overall_ind_pred1_num, overall_ext_pred0_num, overall_ext_pred1_num
 
