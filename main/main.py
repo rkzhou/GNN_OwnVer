@@ -15,11 +15,11 @@ from utils.config import parse_args
 def ownver(args):
     benign_graph_data, benign_model, ori_acc = benign.run(args)
 
-    mask_graph_data, mask_nodes = boundary.mask_graph_data(args, benign_graph_data[0], benign_model)
+    mask_graph_data, mask_nodes = boundary.mask_graph_data(args, benign_graph_data, benign_model)
 
-    graphs_data = [mask_graph_data, benign_graph_data[1], benign_graph_data[2]]
+    # graphs_data = [mask_graph_data, benign_graph_data[1], benign_graph_data[2]]
 
-    _, mask_model, mask_acc = benign.run(args, graphs_data)
+    _, mask_model, mask_acc = benign.run(args, mask_graph_data)
 
 
     # independent model for test
@@ -28,8 +28,8 @@ def ownver(args):
     _, independent_model, ind_acc = benign.run(args, benign_graph_data)
 
     # extraction model for test
-    args.extraction_model = 'gcnExtract'
-    args.extraction_hidden_dim = [512, 256]
+    args.extraction_model = 'gatExtract'
+    args.extraction_hidden_dim = [115, 95]
     extraction_model, ext_acc, ext_fide = extraction.run(args, benign_graph_data, mask_model)
     print(ori_acc, mask_acc)
     print(ind_acc, ext_acc, ext_fide)

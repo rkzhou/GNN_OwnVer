@@ -1,19 +1,19 @@
 import argparse
 
 def add_data_group(group):
-    group.add_argument('--dataset', type=str, default='Citeseer', help="used dataset")
+    group.add_argument('--dataset', type=str, default='PubMed', help="used dataset")
     group.add_argument('--data_path', type=str, default='../dataset', help="the directory used to save dataset")
-    group.add_argument('--task_type', type=str, default='transductive')
+    group.add_argument('--task_type', type=str, default='inductive')
     group.add_argument('--dataset_random_seed', type=int, default=999)
     group.add_argument('--feature_random_seed', type=int, default=999)
     group.add_argument('--mask_node_num', type=int)
     group.add_argument('--mask_feat_num', type=int)
     group.add_argument('--mask_node_type', type=str, default='each_class')
-    group.add_argument('--mask_feat_type', type=str, default='random')
+    group.add_argument('--mask_feat_type', type=str)
 
 
 def add_benign_model_group(group):
-    group.add_argument('--benign_model', type=str, default='sage', help="used model")
+    group.add_argument('--benign_model', type=str, default='gcn', help="used model")
     group.add_argument('--benign_train_ratio', type=float, default=0.6, help="ratio of trainset from whole dataset")
     group.add_argument('--benign_hidden_dim', nargs='+', default=[128, 64], type=int, help='hidden layers of the model')
     group.add_argument('--benign_train_epochs', type=int, default=1000)

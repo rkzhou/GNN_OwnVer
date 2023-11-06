@@ -32,8 +32,8 @@ def extract_logits(graph_data, specific_nodes, independent_model, surrogate_mode
     surrogate_logits = softmax(surrogate_output)
 
     if specific_nodes != None:
-        independent_logits = independent_logits[specific_nodes].detach().cpu()
-        surrogate_logits = surrogate_logits[specific_nodes].detach().cpu()
+        independent_logits = independent_logits[specific_nodes].detach()
+        surrogate_logits = surrogate_logits[specific_nodes].detach()
     
     logits = {'independent': independent_logits, 'surrogate': surrogate_logits}
     
@@ -117,24 +117,18 @@ def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes):
     else:
         device = torch.device('cpu')
     
-    # watermark_model.to(device)
     suspicious_model.to(device)
-    # watermark_model.eval()
     suspicious_model.eval()
     
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-    # _, watermark_output = watermark_model(input_data)
     _, suspicious_output = suspicious_model(input_data)
 
     softmax = torch.nn.Softmax(dim=1)
-    # watermark_logits = softmax(watermark_output)
     suspicious_logits = softmax(suspicious_output)
 
     if measure_nodes != None:
-        # watermark_logits = watermark_logits[measure_nodes].detach().cpu()
-        suspicious_logits = suspicious_logits[measure_nodes].detach().cpu()
+        suspicious_logits = suspicious_logits[measure_nodes].detach()
 
-    # watermark_var = torch.var(watermark_logits, axis=1)
     suspicious_var = torch.var(suspicious_logits, axis=1)
     distance = suspicious_var
     distance = torch.flatten(distance).view(1, -1)
@@ -185,8 +179,9 @@ def batch_ownver(args):
         
             t0 = time.time()
             original_graph_data, original_model, original_model_acc = benign.run(args)
-            mask_graph_data, mask_nodes = boundary.mask_graph_data(args, original_graph_data, original_model)
-            _, mask_model, mask_model_acc = benign.run(args, mask_graph_data)
+            mask_graph_data, mask_nodes = boundary.mask_graph_data(args, original_graph_data[0], original_model)
+            graphs_data = [mask_graph_data, original_graph_data[1], original_graph_data[2]]
+            _, mask_model, mask_model_acc = benign.run(args, graphs_data)
             t1 = time.time()
             original_acc_list.append(original_model_acc)
             mask_acc_list.append(mask_model_acc)
@@ -221,7 +216,7 @@ def batch_ownver(args):
                     shadow_extraction_fide_list.append(extraction_fide)
 
                     t2 = time.time()
-                    logits = extract_logits(original_graph_data, measure_nodes, independent_model, extraction_model)
+                    logits = extract_logits(original_graph_data[0], measure_nodes, independent_model, extraction_model)
                     variance_pair = measure_logits(logits)
                     t3 = time.time()
                     t_train += (t3 - t2)
@@ -233,8 +228,6 @@ def batch_ownver(args):
             t_total = (t1 - t0) + t_train
             t_total = round(t_total, 3)
             time_list.append(t_total)
-            # save_path = '../temp_results/model_states/watermark_classifiers/exp_1/' + 'model' + str(trial_epoch) + '.pt'
-            # torch.save(wm_classifier_model.state_dict(), save_path)
             sta0, sta1, sta2, sta3 = batch_unit_test(args, original_graph_data, mask_model, classifier_model, measure_nodes, test_independent_acc_list, test_extraction_acc_list, test_extraction_fide_list)
             ind_correct_num_list.append(sta0)
             ind_false_num_list.append(sta1)
@@ -304,8 +297,8 @@ def batch_unit_test(args, graph_data, mask_model, classifier_model, measure_node
                 extraction_acc_list[i].append(test_extraction_acc)
                 extraction_fide_list[i].append(test_extraction_fide)
 
-                ind_pred = owner_verify(graph_data, test_independent_model, classifier_model, measure_nodes)
-                ext_pred = owner_verify(graph_data, test_extraction_model, classifier_model, measure_nodes)
+                ind_pred = owner_verify(graph_data[0], test_independent_model, classifier_model, measure_nodes)
+                ext_pred = owner_verify(graph_data[0], test_extraction_model, classifier_model, measure_nodes)
 
                 if ind_pred == 0:
                     overall_ind_pred0_num += 1

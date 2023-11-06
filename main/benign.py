@@ -169,7 +169,7 @@ def get_possibility_variance(graph_data, gnn_model, measure_nodes):
     _, output = gnn_model(input_data)
     softmax = torch.nn.Softmax(dim=1)
     possibility = softmax(output)
-    specific_possibility_vectors = possibility[measure_nodes].detach().cpu()
+    specific_possibility_vectors = possibility[measure_nodes].detach()
     variance = torch.var(specific_possibility_vectors, dim=1)
 
     return variance

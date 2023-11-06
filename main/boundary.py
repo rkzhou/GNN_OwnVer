@@ -7,6 +7,8 @@ import torch_geometric.nn as nn
 import model.gnn_models
 import torch.optim.lr_scheduler as lr_scheduler
 from sklearn.ensemble import RandomForestClassifier
+from pathlib import Path
+import pickle
 
 
 def mask_graph_data(args, graph_data, model):
@@ -24,7 +26,20 @@ def mask_graph_data(args, graph_data, model):
         elif args.mask_feat_type == 'overall_importance':
             mask_features = find_mask_features_overall(graph_data, args.mask_feat_num)
         elif args.mask_feat_type == 'individual_importance':
-            mask_features = find_mask_features_individual(graph_data, model, mask_nodes, args.mask_feat_num)
+            path = Path('../temp_results/feature_importances/PubMed/induc.pkl')
+            if path.is_file():
+                with open(path, 'rb') as f:
+                    feat_importances = pickle.load(f)
+            else:
+                feat_importances = find_mask_features_individual(args, graph_data, model)
+                with open(path, 'wb') as f:
+                    pickle.dump(feat_importances, f)
+            mask_features = dict()
+            for node_class in mask_nodes:
+                for node_index in node_class:
+                    mask_features.update({node_index:feat_importances[node_index][:args.mask_feat_num]})
+        else:
+            raise ValueError('Invalid mask method')
         
         # flip the selected features of chosen nodes
         if args.mask_feat_type == 'random' or args.mask_feat_type == 'overall_importance':
@@ -61,7 +76,7 @@ def measure_posteriors(args, graph_data, measure_node_class, measure_model):
 
     node_posteriors = outputs[measure_nodes]
     softmax = torch.nn.Softmax(dim=1)
-    node_posteriors = softmax(node_posteriors).detach().cpu()
+    node_posteriors = softmax(node_posteriors).detach()
 
     posterior_var = torch.var(node_posteriors, dim=1)
     var_mean = torch.mean(posterior_var)
@@ -86,14 +101,14 @@ def find_mask_nodes(args, graph_data, model):
         node_possibilities = [dict() for _ in range(graph_data.class_num)]
         if args.task_type == 'transductive':
             for node_index in graph_data.benign_train_nodes_index:
-                node_poss = possibility[node_index].detach().cpu()
+                node_poss = possibility[node_index].detach()
                 sorted_node_poss, indices = torch.sort(node_poss, descending=True) # elements are sorted in descending order by value
                 node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
                 node_possibilities[graph_data.labels[node_index].item()].update({node_index: node_class_distance.item()})
     
         elif args.task_type == 'inductive':
             for node_index in range(graph_data.node_num):
-                node_poss = possibility[node_index].detach().cpu()
+                node_poss = possibility[node_index].detach()
                 sorted_node_poss, indices = torch.sort(node_poss, descending=True)
                 node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
                 node_possibilities[graph_data.labels[node_index].item()].update({node_index: node_class_distance.item()})
@@ -110,13 +125,13 @@ def find_mask_nodes(args, graph_data, model):
         node_possibilities = dict()
         if args.task_type == 'transductive':
             for node_index in graph_data.benign_train_nodes_index:
-                node_poss = possibility[node_index].detach().cpu()
+                node_poss = possibility[node_index].detach()
                 sorted_node_poss, indices = torch.sort(node_poss, descending=True)
                 node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
                 node_possibilities.update({node_index: node_class_distance.item()})
         elif args.task_type == 'inductive':
             for node_index in range(graph_data.node_num):
-                node_poss = possibility[node_index].detach().cpu()
+                node_poss = possibility[node_index].detach()
                 sorted_node_poss, indices = torch.sort(node_poss, descending=True)
                 node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
                 node_possibilities.update({node_index: node_class_distance.item()})
@@ -145,7 +160,7 @@ def find_mask_features_overall(graph_data, feat_num):
     return topk_features
 
 
-def find_mask_features_individual(graph_data, gnn_model, node_list, feat_num):
+def find_mask_features_individual(args, graph_data, gnn_model):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -157,30 +172,33 @@ def find_mask_features_individual(graph_data, gnn_model, node_list, feat_num):
 
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
     _, output = gnn_model(input_data)
-    possibility = softmax(output).detach().cpu()
+    possibility = softmax(output).detach()
     var = torch.var(possibility, axis=1)
-
-    temp_node_list = list()
-    for node_class in node_list:
-        temp_node_list += node_class
     
+    search_node_list = list()
+    if args.task_type == 'transductive':
+        search_node_list = copy.deepcopy(graph_data.benign_train_nodes_index)
+    elif args.task_type == 'inductive':
+        for i in range(graph_data.node_num):
+            search_node_list.append(i)
+
     original_variances = dict()
-    for node_index in temp_node_list:
+    for node_index in search_node_list:
         original_variances.update({node_index:var[node_index]})
     
-    node_selected_feat = dict()
-    for node_index in temp_node_list:
+    node_feat_importance = dict()
+    for node_index in search_node_list:
         feat_var_diff = dict()
         for feat_index in range(graph_data.feat_dim):
             temp_features = copy.deepcopy(graph_data.features)
             temp_features[node_index, feat_index] = (temp_features[node_index, feat_index] + 1) % 2
             input_data = temp_features.to(device), graph_data.adjacency.to(device)
             _, output = gnn_model(input_data)
-            possibility = softmax(output).detach().cpu()
+            possibility = softmax(output).detach()
             temp_var = torch.var(possibility[node_index])
             var_diff = original_variances[node_index] - temp_var
             feat_var_diff.update({feat_index:var_diff})
         feat_var_diff = dict(sorted(feat_var_diff.items(), key=lambda x:x[1], reverse=True))
-        node_selected_feat.update({node_index:list(feat_var_diff.keys())[:feat_num]})
+        node_feat_importance.update({node_index:list(feat_var_diff.keys())})
     
-    return node_selected_feat
+    return node_feat_importance

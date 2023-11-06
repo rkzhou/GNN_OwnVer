@@ -55,7 +55,7 @@ class GraphData(torch.utils.data.Dataset):
         for i in range(self.node_num):
             each_class_nodes_index[self.labels[i]].append(i)
         for i in range(self.class_num):
-            # random.seed(args.dataset_random_seed)
+            random.seed(args.dataset_random_seed)
             random.shuffle(each_class_nodes_index[i])
             class_node_num = len(each_class_nodes_index[i])
             benign_train_size = math.floor(class_node_num * args.benign_train_ratio)
