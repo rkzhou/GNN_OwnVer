@@ -28,9 +28,7 @@ class GraphData(torch.utils.data.Dataset):
         self.labels = data[0]['y']
         self.node_num = len(self.labels)
         self.feat_dim = len(self.features[0])
-        self.benign_train_mask = None
-        self.extraction_train_mask = None
-        self.test_mask = None
+
         self.set_adj_mat()
         self.get_class_num()
         self.split_dataset(args)
@@ -49,7 +47,7 @@ class GraphData(torch.utils.data.Dataset):
 
     def split_dataset(self, args):
         all_nodes_index = list(i for i in range(self.node_num))
-        self.benign_train_nodes_index, self.extraction_train_nodes_index, self.test_nodes_index = list(), list(), list()
+        self.target_nodes_index, self.shadow_nodes_index, self.attacker_nodes_index, self.test_nodes_index = list(), list(), list(), list()
         
         each_class_nodes_index = [list() for _ in range(self.class_num)]
         for i in range(self.node_num):
@@ -58,27 +56,22 @@ class GraphData(torch.utils.data.Dataset):
             random.seed(args.dataset_random_seed)
             random.shuffle(each_class_nodes_index[i])
             class_node_num = len(each_class_nodes_index[i])
-            benign_train_size = math.floor(class_node_num * args.benign_train_ratio)
-            extraction_train_size = math.floor(class_node_num * (1.0-args.benign_train_ratio) * args.extraction_ratio)
-            test_size = class_node_num - benign_train_size - extraction_train_size
-            # print(benign_train_size, extraction_train_size, test_size)
+            target_nodes_size = math.floor(class_node_num * args.split_dataset_ratio[0])
+            shadow_nodes_size = math.floor(class_node_num * args.split_dataset_ratio[1])
+            attacker_nodes_size = math.floor(class_node_num * args.split_dataset_ratio[2])
+            test_nodes_size = class_node_num - target_nodes_size - shadow_nodes_size - attacker_nodes_size
 
-            self.benign_train_nodes_index += each_class_nodes_index[i][:benign_train_size]
-            self.extraction_train_nodes_index += each_class_nodes_index[i][benign_train_size:(benign_train_size+extraction_train_size)]
-            self.test_nodes_index += each_class_nodes_index[i][(benign_train_size+extraction_train_size):]
+            # print(target_nodes_size, shadow_nodes_size, attacker_nodes_size, test_nodes_size)
 
-            self.benign_train_nodes_index.sort()
-            self.extraction_train_nodes_index.sort()
+            self.target_nodes_index += each_class_nodes_index[i][:target_nodes_size]
+            self.shadow_nodes_index += each_class_nodes_index[i][target_nodes_size:(target_nodes_size + shadow_nodes_size)]
+            self.attacker_nodes_index += each_class_nodes_index[i][(target_nodes_size + shadow_nodes_size):(target_nodes_size + shadow_nodes_size + attacker_nodes_size)]
+            self.test_nodes_index += each_class_nodes_index[i][(target_nodes_size + shadow_nodes_size + attacker_nodes_size):]
+
+            self.target_nodes_index.sort()
+            self.shadow_nodes_index.sort()
+            self.attacker_nodes_index.sort()
             self.test_nodes_index.sort()
-        
-
-        self.benign_train_mask, self.extraction_train_mask, self.test_mask = torch.zeros(self.node_num), torch.zeros(self.node_num), torch.zeros(self.node_num)
-        self.benign_train_mask[self.benign_train_nodes_index] = 1
-        self.extraction_train_mask[self.extraction_train_nodes_index] = 1
-        self.test_mask[self.test_nodes_index] = 1
-        self.benign_train_mask = self.benign_train_mask.bool()
-        self.extraction_train_mask = self.extraction_train_mask.bool()
-        self.test_mask = self.test_mask.bool()
 
     def __len__(self):
         return self.node_num

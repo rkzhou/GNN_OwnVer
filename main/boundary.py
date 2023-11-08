@@ -26,7 +26,7 @@ def mask_graph_data(args, graph_data, model):
             random.shuffle(mask_features)
             mask_features = mask_features[:mask_feat_num]
         elif args.mask_feat_type == 'mask_by_dataset':
-            mask_features = find_mask_features_overall(graph_data, mask_feat_num)
+            mask_features = find_mask_features_overall(args, graph_data, mask_feat_num)
         elif args.mask_feat_type == 'mask_by_node':
             path = Path('../temp_results/feature_importances/PubMed/induc.pkl')
             if path.is_file():
@@ -86,7 +86,7 @@ def measure_posteriors(args, graph_data, measure_node_class, measure_model):
 
 
 def find_mask_nodes(args, graph_data, model):
-    # find the nodes from each class with least loss
+    # find the nodes from each class with least possibility difference
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -99,23 +99,32 @@ def find_mask_nodes(args, graph_data, model):
     possibility = softmax(output)
 
     if args.mask_node_type == 'each_class':
-        each_class_num = [0 for _ in range(graph_data.class_num)]
-        for i in range(graph_data.node_num):
-            each_class_num[graph_data.labels[i]] += 1
-        each_class_mask_node_num = list()
-        for num in each_class_num:
-            mask_node_num = math.floor(num * args.mask_node_ratio)
-            each_class_mask_node_num.append(mask_node_num)
-        
         node_possibilities = [dict() for _ in range(graph_data.class_num)]
+
         if args.task_type == 'transductive':
-            for node_index in graph_data.benign_train_nodes_index:
+            each_class_num = [0 for _ in range(graph_data.class_num)]
+            for node_index in graph_data.target_nodes_index:
+                each_class_num[graph_data.labels[node_index]] += 1
+            each_class_mask_node_num = list()
+            for num in each_class_num:
+                mask_node_num = math.floor(num * args.mask_node_ratio)
+                each_class_mask_node_num.append(mask_node_num)
+            
+            for node_index in graph_data.target_nodes_index:
                 node_poss = possibility[node_index].detach()
                 sorted_node_poss, indices = torch.sort(node_poss, descending=True) # elements are sorted in descending order by value
                 node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
                 node_possibilities[graph_data.labels[node_index].item()].update({node_index: node_class_distance.item()})
     
         elif args.task_type == 'inductive':
+            each_class_num = [0 for _ in range(graph_data.class_num)]
+            for node_index in range(graph_data.node_num):
+                each_class_num[graph_data.labels[node_index]] += 1
+            each_class_mask_node_num = list()
+            for num in each_class_num:
+                mask_node_num = math.floor(num * args.mask_node_ratio)
+                each_class_mask_node_num.append(mask_node_num)
+
             for node_index in range(graph_data.node_num):
                 node_poss = possibility[node_index].detach()
                 sorted_node_poss, indices = torch.sort(node_poss, descending=True)
@@ -135,7 +144,7 @@ def find_mask_nodes(args, graph_data, model):
 
         node_possibilities = dict()
         if args.task_type == 'transductive':
-            for node_index in graph_data.benign_train_nodes_index:
+            for node_index in graph_data.target_nodes_index:
                 node_poss = possibility[node_index].detach()
                 sorted_node_poss, indices = torch.sort(node_poss, descending=True)
                 node_class_distance = sorted_node_poss[0] - sorted_node_poss[1]
@@ -154,9 +163,13 @@ def find_mask_nodes(args, graph_data, model):
     return topk_nodes
 
 
-def find_mask_features_overall(graph_data, feat_num):
-    X = graph_data.features.numpy()
-    Y = graph_data.labels.numpy()
+def find_mask_features_overall(args, graph_data, feat_num):
+    if args.task_type == 'transductive':
+        X = graph_data.features[graph_data.target_nodes_index].numpy()
+        Y = graph_data.labels[graph_data.target_nodes_index].numpy()
+    elif args.task_type == 'inductive':
+        X = graph_data.features.numpy()
+        Y = graph_data.labels.numpy()
 
     dt_model = RandomForestClassifier()
     dt_model.fit(X, Y)
@@ -188,7 +201,7 @@ def find_mask_features_individual(args, graph_data, gnn_model):
     
     search_node_list = list()
     if args.task_type == 'transductive':
-        search_node_list = copy.deepcopy(graph_data.benign_train_nodes_index)
+        search_node_list = graph_data.target_nodes_index
     elif args.task_type == 'inductive':
         for i in range(graph_data.node_num):
             search_node_list.append(i)

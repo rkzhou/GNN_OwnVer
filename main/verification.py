@@ -187,7 +187,7 @@ def batch_ownver(args):
             original_graph_data, original_model, original_model_acc = benign.run(args, original_model_save_path)
 
             mask_graph_data, mask_nodes = boundary.mask_graph_data(args, original_graph_data, original_model)
-            # graphs_data = [mask_graph_data, original_graph_data[1], original_graph_data[2]]
+            # graphs_data = [mask_graph_data, original_graph_data[1], original_graph_data[2], original_graph_data[3]]
             mask_model_save_root = model_save_root + 'mask_models/' + args.mask_feat_type + '/' + str(args.mask_node_ratio) + '_' + str(args.mask_feat_ratio)
             if not os.path.exists(mask_model_save_root):
                 os.makedirs(mask_model_save_root)
@@ -232,7 +232,7 @@ def batch_ownver(args):
                         if not os.path.exists(extraction_model_save_root):
                             os.makedirs(extraction_model_save_root)
                         extraction_model_save_path = extraction_model_save_root + '/train_' + args.extraction_model + '_' + str(p) + '_' + str(q) + '.pt'
-                        extraction_model, extraction_acc, extraction_fide = extraction.run(args, extraction_model_save_path, original_graph_data, mask_model)
+                        extraction_model, extraction_acc, extraction_fide = extraction.run(args, extraction_model_save_path, original_graph_data, mask_model, 'train')
                         t3 = time.time()
                         t_train += (t3 - t2)
 
@@ -327,7 +327,7 @@ def batch_unit_test(args, graph_data, mask_model, classifier_model, measure_node
                 if not os.path.exists(extraction_model_save_root):
                     os.makedirs(extraction_model_save_root)
                 extraction_model_save_path = extraction_model_save_root + '/test_' + args.extraction_model + '_' + str(p) + '_' + str(q) + '.pt'                
-                test_extraction_model, test_extraction_acc, test_extraction_fide = extraction.run(args, extraction_model_save_path, graph_data, mask_model)
+                test_extraction_model, test_extraction_acc, test_extraction_fide = extraction.run(args, extraction_model_save_path, graph_data, mask_model, 'test')
 
                 independent_acc_list[i].append(test_independent_acc)
                 extraction_acc_list[i].append(test_extraction_acc)

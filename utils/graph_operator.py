@@ -114,20 +114,24 @@ def sort_features(args, feat_num, graph_data, original_model):
 
 def split_subgraph(graph):
     temp_edge_index = add_self_loops(graph.adjacency)[0]
-    benign_train_edge_index = subgraph(torch.as_tensor(graph.benign_train_nodes_index), temp_edge_index, relabel_nodes=True)[0]
-    extraction_train_edge_index = subgraph(torch.as_tensor(graph.extraction_train_nodes_index), temp_edge_index, relabel_nodes=True)[0]
+    target_edge_index = subgraph(torch.as_tensor(graph.target_nodes_index), temp_edge_index, relabel_nodes=True)[0]
+    shadow_edge_index = subgraph(torch.as_tensor(graph.shadow_nodes_index), temp_edge_index, relabel_nodes=True)[0]
+    attacker_edge_index = subgraph(torch.as_tensor(graph.attacker_nodes_index), temp_edge_index, relabel_nodes=True)[0]
     test_edge_index = subgraph(torch.as_tensor(graph.test_nodes_index), temp_edge_index, relabel_nodes=True)[0]
 
-    benign_train_features = graph.features[graph.benign_train_nodes_index]
-    extraction_train_features = graph.features[graph.extraction_train_nodes_index]
+    target_features = graph.features[graph.target_nodes_index]
+    shadow_features = graph.features[graph.shadow_nodes_index]
+    attacker_features = graph.features[graph.attacker_nodes_index]
     test_features = graph.features[graph.test_nodes_index]
 
-    benign_train_labels = graph.labels[graph.benign_train_nodes_index]
-    extraction_train_labels = graph.labels[graph.extraction_train_nodes_index]
+    target_labels = graph.labels[graph.target_nodes_index]
+    shadow_labels = graph.labels[graph.shadow_nodes_index]
+    attacker_labels = graph.labels[graph.attacker_nodes_index]
     test_labels = graph.labels[graph.test_nodes_index]
 
-    benign_train_subgraph = Graph_self(benign_train_features, benign_train_edge_index, benign_train_labels)
-    extraction_train_subgraph = Graph_self(extraction_train_features, extraction_train_edge_index, extraction_train_labels)
+    target_subgraph = Graph_self(target_features, target_edge_index, target_labels)
+    shadow_subgraph = Graph_self(shadow_features, shadow_edge_index, shadow_labels)
+    attacker_subgraph = Graph_self(attacker_features, attacker_edge_index, attacker_labels)
     test_subgraph = Graph_self(test_features, test_edge_index, test_labels)
 
-    return benign_train_subgraph, extraction_train_subgraph, test_subgraph
+    return target_subgraph, shadow_subgraph, attacker_subgraph, test_subgraph

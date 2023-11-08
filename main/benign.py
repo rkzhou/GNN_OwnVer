@@ -48,7 +48,7 @@ def transductive_train(args, model_save_path, graph_data):
             input_data = gdata.features.to(device), gdata.adjacency.to(device)
             labels = gdata.labels.to(device)
             _, output = gnn_model(input_data)
-            loss = loss_fn(output[gdata.benign_train_mask], labels[gdata.benign_train_mask])
+            loss = loss_fn(output[gdata.target_nodes_index], labels[gdata.target_nodes_index])
             loss.backward()
             optimizer.step()
             # scheduler.step()
@@ -57,8 +57,8 @@ def transductive_train(args, model_save_path, graph_data):
             if (epoch + 1) % 100 == 0:
                 _, output = gnn_model(input_data)
                 pred = predict_fn(output)
-                train_pred = pred[gdata.benign_train_mask]
-                train_labels = gdata.labels[gdata.benign_train_mask]
+                train_pred = pred[gdata.target_nodes_index]
+                train_labels = gdata.labels[gdata.target_nodes_index]
                 
                 for i in range(train_pred.shape[0]):
                     if train_pred[i, 0] == train_labels[i]:
@@ -80,13 +80,13 @@ def transductive_train(args, model_save_path, graph_data):
     gnn_model.eval()
     _, output = gnn_model(input_data)
     pred = predict_fn(output)
-    test_pred = pred[gdata.test_mask]
-    test_labels = gdata.labels[gdata.test_mask]
+    test_pred = pred[gdata.test_nodes_index]
+    test_labels = gdata.labels[gdata.test_nodes_index]
     for i in range(test_pred.shape[0]):
         if test_pred[i, 0] == test_labels[i]:
             test_correct_num += 1
     test_acc = test_correct_num / test_pred.shape[0] * 100
-    save_test_acc = round(test_acc, 2)
+    save_test_acc = round(test_acc, 3)
     
     return gdata, gnn_model, save_test_acc
 
@@ -100,20 +100,20 @@ def inductive_train(args, model_save_path, graph_data):
     if graph_data == None:
         data = utils.datareader.get_data(args)
         gdata = utils.datareader.GraphData(data, args)
-        benign_train_greaph_data, extraction_train_graph_data, test_graph_data = split_subgraph(gdata)
+        target_graph_data, shadow_graph_data, attacker_graph_data, test_graph_data = split_subgraph(gdata)
     else:
-        benign_train_greaph_data, extraction_train_graph_data, test_graph_data = graph_data
+        target_graph_data, shadow_graph_data, attacker_graph_data, test_graph_data = graph_data
 
     path = Path(model_save_path)
     if path.is_file():
         gnn_model = torch.load(model_save_path)
     else:
         if args.benign_model == 'gcn':
-            gnn_model = model.gnn_models.GCN(benign_train_greaph_data.feat_dim, benign_train_greaph_data.class_num, hidden_dim=args.benign_hidden_dim)
+            gnn_model = model.gnn_models.GCN(target_graph_data.feat_dim, target_graph_data.class_num, hidden_dim=args.benign_hidden_dim)
         elif args.benign_model == 'sage':
-            gnn_model = model.gnn_models.GraphSage(benign_train_greaph_data.feat_dim, benign_train_greaph_data.class_num, hidden_dim=args.benign_hidden_dim)
+            gnn_model = model.gnn_models.GraphSage(target_graph_data.feat_dim, target_graph_data.class_num, hidden_dim=args.benign_hidden_dim)
         elif args.benign_model == 'gat':
-            gnn_model = model.gnn_models.GAT(benign_train_greaph_data.feat_dim, benign_train_greaph_data.class_num, hidden_dim=args.benign_hidden_dim)
+            gnn_model = model.gnn_models.GAT(target_graph_data.feat_dim, target_graph_data.class_num, hidden_dim=args.benign_hidden_dim)
         gnn_model.to(device)
 
         loss_fn = torch.nn.CrossEntropyLoss()
@@ -124,8 +124,8 @@ def inductive_train(args, model_save_path, graph_data):
         for epoch in range(args.benign_train_epochs):
             gnn_model.train()
             optimizer.zero_grad()
-            input_data = benign_train_greaph_data.features.to(device), benign_train_greaph_data.adjacency.to(device)
-            labels = benign_train_greaph_data.labels.to(device)
+            input_data = target_graph_data.features.to(device), target_graph_data.adjacency.to(device)
+            labels = target_graph_data.labels.to(device)
             _, output = gnn_model(input_data)
             loss = loss_fn(output, labels)
             loss.backward()
@@ -162,9 +162,9 @@ def inductive_train(args, model_save_path, graph_data):
         if predictions[i, 0] == test_labels[i]:
             test_correct_num += 1
     test_acc = test_correct_num / predictions.shape[0] * 100
-    save_test_acc = round(test_acc, 2)
+    save_test_acc = round(test_acc, 3)
 
-    graphs = [benign_train_greaph_data, extraction_train_graph_data, test_graph_data]
+    graphs = [target_graph_data, shadow_graph_data, attacker_graph_data, test_graph_data]
     
     return graphs, gnn_model, save_test_acc
 
