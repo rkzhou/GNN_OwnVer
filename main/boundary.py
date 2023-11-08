@@ -9,23 +9,25 @@ import torch.optim.lr_scheduler as lr_scheduler
 from sklearn.ensemble import RandomForestClassifier
 from pathlib import Path
 import pickle
+import math
 
 
 def mask_graph_data(args, graph_data, model):
     mask_nodes = find_mask_nodes(args, graph_data, model)
+    mask_feat_num = math.floor(graph_data.feat_dim * args.mask_feat_ratio)
 
     new_graph_data = copy.deepcopy(graph_data)
-    if args.mask_node_num == 0 or args.mask_feat_num == 0:
+    if args.mask_node_ratio == 0 or args.mask_feat_ratio == 0:
         pass
     else:
-        if args.mask_feat_type == 'random':
+        if args.mask_feat_type == 'random_mask':
             mask_features = list(i for i in range(graph_data.feat_dim))
-            # random.seed(args.feature_random_seed)
+            random.seed(args.feature_random_seed)
             random.shuffle(mask_features)
-            mask_features = mask_features[:args.mask_feat_num]
-        elif args.mask_feat_type == 'overall_importance':
-            mask_features = find_mask_features_overall(graph_data, args.mask_feat_num)
-        elif args.mask_feat_type == 'individual_importance':
+            mask_features = mask_features[:mask_feat_num]
+        elif args.mask_feat_type == 'mask_by_dataset':
+            mask_features = find_mask_features_overall(graph_data, mask_feat_num)
+        elif args.mask_feat_type == 'mask_by_node':
             path = Path('../temp_results/feature_importances/PubMed/induc.pkl')
             if path.is_file():
                 with open(path, 'rb') as f:
@@ -37,17 +39,17 @@ def mask_graph_data(args, graph_data, model):
             mask_features = dict()
             for node_class in mask_nodes:
                 for node_index in node_class:
-                    mask_features.update({node_index:feat_importances[node_index][:args.mask_feat_num]})
+                    mask_features.update({node_index:feat_importances[node_index][:mask_feat_num]})
         else:
             raise ValueError('Invalid mask method')
         
         # flip the selected features of chosen nodes
-        if args.mask_feat_type == 'random' or args.mask_feat_type == 'overall_importance':
+        if args.mask_feat_type == 'random_mask' or args.mask_feat_type == 'mask_by_dataset':
             for node_class in mask_nodes:
                 for node_index in node_class:
-                    for i in range(args.mask_feat_num):
+                    for i in range(mask_feat_num):
                         new_graph_data.features[node_index][mask_features[i]] = (new_graph_data.features[node_index][mask_features[i]] + 1) % 2
-        elif args.mask_feat_type == 'individual_importance':
+        elif args.mask_feat_type == 'mask_by_node':
             for node_index, feat_list in mask_features.items():
                 for feat_index in feat_list:
                     new_graph_data.features[node_index, feat_index] = (new_graph_data.features[node_index, feat_index] + 1) % 2
@@ -91,13 +93,20 @@ def find_mask_nodes(args, graph_data, model):
         device = torch.device('cpu')
     
     model.eval()
-    
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
     _, output = model(input_data)
     softmax = torch.nn.Softmax(dim=1)
     possibility = softmax(output)
 
     if args.mask_node_type == 'each_class':
+        each_class_num = [0 for _ in range(graph_data.class_num)]
+        for i in range(graph_data.node_num):
+            each_class_num[graph_data.labels[i]] += 1
+        each_class_mask_node_num = list()
+        for num in each_class_num:
+            mask_node_num = math.floor(num * args.mask_node_ratio)
+            each_class_mask_node_num.append(mask_node_num)
+        
         node_possibilities = [dict() for _ in range(graph_data.class_num)]
         if args.task_type == 'transductive':
             for node_index in graph_data.benign_train_nodes_index:
@@ -120,8 +129,10 @@ def find_mask_nodes(args, graph_data, model):
     
         topk_nodes = list()
         for i in range(graph_data.class_num):
-            topk_nodes.append(list(new_node_possibilities[i].keys())[:args.mask_node_num])
+            topk_nodes.append(list(new_node_possibilities[i].keys())[:each_class_mask_node_num[i]])
     elif args.mask_node_type == 'overall':
+        mask_node_num = math.floor(graph_data.node_num * args.mask_node_ratio)
+
         node_possibilities = dict()
         if args.task_type == 'transductive':
             for node_index in graph_data.benign_train_nodes_index:
@@ -138,7 +149,7 @@ def find_mask_nodes(args, graph_data, model):
         
         node_possibilities = dict(sorted(node_possibilities.items(), key=lambda x:x[1], reverse=False))
         topk_nodes = list()
-        topk_nodes.append(list(node_possibilities.keys())[:args.mask_node_num])
+        topk_nodes.append(list(node_possibilities.keys())[:mask_node_num])
     
     return topk_nodes
 
