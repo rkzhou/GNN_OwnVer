@@ -108,6 +108,8 @@ def train_classifier(distance_pairs:list):
 
             acc = correct / len(dataset) * 100
             print(acc)
+            if acc == 100:
+                break
 
     
     return model
@@ -143,9 +145,11 @@ def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes):
     
     return predictions
 
+def generate_hidden_dims():
+    pass
 
 def batch_ownver(args):
-    model_save_root = '../temp_results/model_states/' + args.dataset + '/' + args.task_type + '/'
+    model_save_root = os.path.join('../temp_results/model_states/', args.dataset, args.task_type)
     original_first_layer_dim = [475]
     original_second_layer_dim = [325, 275, 225]
 
@@ -167,6 +171,8 @@ def batch_ownver(args):
     
     
     trial_index = 0
+
+
     for i in original_first_layer_dim:
         for j in original_second_layer_dim:
             print('starting trial {}'.format(trial_index))
@@ -180,18 +186,20 @@ def batch_ownver(args):
             args.benign_hidden_dim = original_layers
         
             t0 = time.time()
-            original_model_save_root = model_save_root + 'original_models'
+            original_model_save_root = os.path.join(model_save_root, 'original_models')
             if not os.path.exists(original_model_save_root):
                 os.makedirs(original_model_save_root)
-            original_model_save_path = original_model_save_root + '/' + args.benign_model + '_' + str(i) + '_' + str(j) + '.pt'
+            original_model_save_path = os.path.join(original_model_save_root,"{}_{}_{}.pt".format(args.benign_model, i, j))
             original_graph_data, original_model, original_model_acc = benign.run(args, original_model_save_path)
 
             mask_graph_data, mask_nodes = boundary.mask_graph_data(args, original_graph_data, original_model)
             # graphs_data = [mask_graph_data, original_graph_data[1], original_graph_data[2], original_graph_data[3]]
-            mask_model_save_root = model_save_root + 'mask_models/' + args.mask_feat_type + '/' + str(args.mask_node_ratio) + '_' + str(args.mask_feat_ratio)
+            mask_model_save_root = os.path.join(model_save_root, "mask_models", args.mask_feat_type, "{}_{}".format(args.mask_node_ratio, args.mask_feat_ratio))
             if not os.path.exists(mask_model_save_root):
                 os.makedirs(mask_model_save_root)
-            mask_model_save_path = mask_model_save_root + '/' + args.benign_model + '_' + str(i) + '_' + str(j) + '.pt'
+
+            mask_model_save_name = "{}_{}_{}".format(args.benign_model, i, j)
+            mask_model_save_path = os.path.join(mask_model_save_root, "{}.pt".format(mask_model_save_name))
             _, mask_model, mask_model_acc = benign.run(args, mask_model_save_path, mask_graph_data)
             t1 = time.time()
             original_acc_list.append(original_model_acc)
@@ -206,8 +214,10 @@ def batch_ownver(args):
         
             # train shadow models
             t_train = 0
-            independent_arch = ['gcn', 'gat', 'sage']
-            extraction_arch = ['gcn', 'gat', 'sage']
+
+            # TODO
+            independent_arch = ['gcn', "gat", "sage"]
+            extraction_arch = ['gcn', "gat", "sage"]
             for k in range(len(independent_arch)):
                 args.benign_model = independent_arch[k]
                 args.extraction_model = extraction_arch[k]
@@ -222,17 +232,18 @@ def batch_ownver(args):
                         args.extraction_hidden_dim = shadow_layers
                         t2 = time.time()
                         
-                        independent_model_save_root = model_save_root + 'independent_models'
+                        independent_model_save_root = os.path.join(model_save_root, 'independent_models')
                         if not os.path.exists(independent_model_save_root):
                             os.makedirs(independent_model_save_root)
-                        independent_model_save_path = independent_model_save_root + '/train_' + args.benign_model + '_' + str(p) + '_' + str(q) + '.pt'
+                        independent_model_save_path = os.path.join(independent_model_save_root,  "train_{}_{}_{}.pt".format(args.benign_model, p, q))
                         _, independent_model, independent_acc = benign.run(args, independent_model_save_path, original_graph_data)
 
-                        extraction_model_save_root = model_save_root + 'extraction_models/' + args.mask_feat_type + '/' + str(args.mask_node_ratio) + '_' + str(args.mask_feat_ratio)
+                        extraction_model_save_root = os.path.join(model_save_root, 'extraction_models', args.mask_feat_type,
+                                                                  mask_model_save_name, "{}_{}".format(args.mask_node_ratio, args.mask_feat_ratio))
                         if not os.path.exists(extraction_model_save_root):
                             os.makedirs(extraction_model_save_root)
-                        extraction_model_save_path = extraction_model_save_root + '/train_' + args.extraction_model + '_' + str(p) + '_' + str(q) + '.pt'
-                        extraction_model, extraction_acc, extraction_fide = extraction.run(args, extraction_model_save_path, original_graph_data, mask_model, 'train')
+                        extraction_model_save_path = os.path.join(extraction_model_save_root, "train_{}_{}_{}.pt".format(args.extraction_model, p, q))
+                        extraction_model, extraction_acc, extraction_fide = extraction.run(args, extraction_model_save_path, original_graph_data, mask_model, 'test')
                         t3 = time.time()
                         t_train += (t3 - t2)
 
@@ -253,7 +264,8 @@ def batch_ownver(args):
             t_total = (t1 - t0) + t_train
             t_total = round(t_total, 3)
             time_list.append(t_total)
-            sta0, sta1, sta2, sta3 = batch_unit_test(args, original_graph_data, mask_model, classifier_model, measure_nodes, test_independent_acc_list, test_extraction_acc_list, test_extraction_fide_list)
+            sta0, sta1, sta2, sta3 = batch_unit_test(args, original_graph_data, mask_model, classifier_model, measure_nodes,
+                                                     test_independent_acc_list, test_extraction_acc_list, test_extraction_fide_list, mask_model_save_name)
             ind_correct_num_list.append(sta0)
             ind_false_num_list.append(sta1)
             ext_correct_num_list.append(sta3)
@@ -294,10 +306,11 @@ def batch_ownver(args):
     get_stats_of_list(time_list, 'time consuming:')
         
 
-def batch_unit_test(args, graph_data, mask_model, classifier_model, measure_nodes, independent_acc_list, extraction_acc_list, extraction_fide_list):
-    model_save_root = '../temp_results/model_states/' + args.dataset + '/' + args.task_type + '/'
-    independent_arch = ['gcn', 'gat', 'sage']
-    extraction_arch = ['gcn', 'gat', 'sage']
+def batch_unit_test(args, graph_data, mask_model, classifier_model, measure_nodes, independent_acc_list, extraction_acc_list, extraction_fide_list, mask_model_save_name):
+
+    model_save_root = os.path.join('../temp_results/model_states/', args.dataset, args.task_type)
+    independent_arch = ['gin']
+    extraction_arch = ['gin']
     first_layers_dim = [425, 375, 325, 275, 225]
     second_layers_dim = [160, 128, 96, 64, 32]
     
@@ -317,16 +330,18 @@ def batch_unit_test(args, graph_data, mask_model, classifier_model, measure_node
                 args.benign_hidden_dim = test_model_layers
                 args.extraction_hidden_dim = test_model_layers
                 
-                independent_model_save_root = model_save_root + 'independent_models'
+                independent_model_save_root = os.path.join(model_save_root, 'independent_models')
                 if not os.path.exists(independent_model_save_root):
                     os.makedirs(independent_model_save_root)
-                independent_model_save_path = independent_model_save_root + '/test_' + args.benign_model + '_' + str(p) + '_' + str(q) + '.pt'
+                independent_model_save_path = os.path.join(independent_model_save_root, "test_{}_{}_{}.pt".format(args.benign_model, p, q))
                 _, test_independent_model, test_independent_acc = benign.run(args, independent_model_save_path, graph_data)
 
-                extraction_model_save_root = model_save_root + 'extraction_models/' + args.mask_feat_type
+                extraction_model_save_root = os.path.join(model_save_root, 'extraction_models', args.mask_feat_type, mask_model_save_name,
+                                                          "{}_{}".format(args.mask_node_ratio, args.mask_feat_ratio))
+
                 if not os.path.exists(extraction_model_save_root):
                     os.makedirs(extraction_model_save_root)
-                extraction_model_save_path = extraction_model_save_root + '/test_' + args.extraction_model + '_' + str(p) + '_' + str(q) + '.pt'                
+                extraction_model_save_path = os.path.join(extraction_model_save_root, 'test_{}_{}_{}.pt'.format(args.extraction_model, p, q)  )
                 test_extraction_model, test_extraction_acc, test_extraction_fide = extraction.run(args, extraction_model_save_path, graph_data, mask_model, 'test')
 
                 independent_acc_list[i].append(test_independent_acc)

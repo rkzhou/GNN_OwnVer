@@ -108,6 +108,8 @@ def train_extraction_model(args, model_save_path, data, process):
         extraction_model = model.extraction_models.SageExtract(in_dim, out_dim, hidden_dim=args.extraction_hidden_dim)
     elif args.extraction_model == 'gat':
         extraction_model = model.extraction_models.GatExtract(in_dim, out_dim, hidden_dim=args.extraction_hidden_dim)
+    elif args.extraction_model == 'gin':
+        extraction_model = model.extraction_models.GinExtract(in_dim, out_dim, hidden_dim=args.extraction_hidden_dim)
     extraction_model = extraction_model.to(device)
 
     loss_fn = torch.nn.CrossEntropyLoss()

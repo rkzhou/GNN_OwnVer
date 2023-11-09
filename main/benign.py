@@ -24,6 +24,12 @@ def transductive_train(args, model_save_path, graph_data):
         gdata = graph_data
     
     path = Path(model_save_path)
+
+    # training
+    loss_fn = torch.nn.CrossEntropyLoss()
+    predict_fn = lambda output: output.max(1, keepdim=True)[1]
+
+
     if path.is_file():
         gnn_model = torch.load(model_save_path)
     else:
@@ -33,11 +39,10 @@ def transductive_train(args, model_save_path, graph_data):
             gnn_model = model.gnn_models.GraphSage(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim)
         elif args.benign_model == 'gat':
             gnn_model = model.gnn_models.GAT(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim)
+        elif args.benign_model == 'gin':
+            gnn_model = model.gnn_models.GIN(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim)
         gnn_model.to(device)
 
-        # training
-        loss_fn = torch.nn.CrossEntropyLoss()
-        predict_fn = lambda output: output.max(1, keepdim=True)[1]
         optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr)
         # scheduler = lr_scheduler.MultiStepLR(optimizer, args.benign_lr_decay_steps, gamma=0.1)
 
@@ -78,6 +83,7 @@ def transductive_train(args, model_save_path, graph_data):
     
     test_correct_num = 0
     gnn_model.eval()
+    input_data = gdata.features.to(device), gdata.adjacency.to(device)
     _, output = gnn_model(input_data)
     pred = predict_fn(output)
     test_pred = pred[gdata.test_nodes_index]
@@ -189,6 +195,7 @@ def get_possibility_variance(graph_data, gnn_model, measure_nodes):
 
 
 def run(args, model_save_path, given_graph_data=None):
+
     if args.task_type == 'transductive':
         graph_data, gnn_model, test_acc = transductive_train(args, model_save_path, given_graph_data)
         return graph_data, gnn_model, test_acc
