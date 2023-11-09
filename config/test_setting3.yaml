@@ -1,0 +1,5 @@
+
+model_arches: ["gin"]
+layer_dims: [96,  160, 224, 288, 352]
+num_hidden_layers: [2]
+
