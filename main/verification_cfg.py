@@ -376,4 +376,7 @@ def get_stats_of_list(l, flag):
 
     
 if __name__ == '__main__':
-    pass
+    from utils.config import parse_args
+    args = parse_args()
+    # ownver(args)
+    batch_ownver(args)

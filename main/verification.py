@@ -164,9 +164,9 @@ def batch_ownver(args):
     shadow_independent_acc_list = list()
     shadow_extraction_acc_list = list()
     shadow_extraction_fide_list = list()
-    test_independent_acc_list = [list() for _  in range(3)] # gcn, gat, sage
-    test_extraction_acc_list = [list() for _  in range(3)]
-    test_extraction_fide_list = [list() for _ in range(3)]
+    test_independent_acc_list = [list() for _  in range(4)] # gcn, gat, sage
+    test_extraction_acc_list = [list() for _  in range(4)]
+    test_extraction_fide_list = [list() for _ in range(4)]
     time_list = list()
     
     
@@ -309,8 +309,8 @@ def batch_ownver(args):
 def batch_unit_test(args, graph_data, mask_model, classifier_model, measure_nodes, independent_acc_list, extraction_acc_list, extraction_fide_list, mask_model_save_name):
 
     model_save_root = os.path.join('../temp_results/model_states/', args.dataset, args.task_type)
-    independent_arch = ['gin']
-    extraction_arch = ['gin']
+    independent_arch = ['gin', 'gcn', "gat", "sage"]
+    extraction_arch = ['gin', 'gcn', "gat", "sage"]
     first_layers_dim = [425, 375, 325, 275, 225]
     second_layers_dim = [160, 128, 96, 64, 32]
     

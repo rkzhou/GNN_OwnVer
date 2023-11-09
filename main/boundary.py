@@ -28,7 +28,7 @@ def mask_graph_data(args, graph_data, model):
         elif args.mask_feat_type == 'mask_by_dataset':
             mask_features = find_mask_features_overall(args, graph_data, mask_feat_num)
         elif args.mask_feat_type == 'mask_by_node':
-            path = Path('../temp_results/feature_importances/PubMed/induc.pkl')
+            path = Path('../temp_results/feature_importances/{}/{}.pkl'.format(args.dataset, args.task_type))
             if path.is_file():
                 with open(path, 'rb') as f:
                     feat_importances = pickle.load(f)
