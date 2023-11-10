@@ -150,7 +150,7 @@ def generate_hidden_dims():
 
 def batch_ownver(args):
     model_save_root = os.path.join('../temp_results/model_states/', args.dataset, args.task_type)
-    original_first_layer_dim = [475]
+    original_first_layer_dim = [384]
     original_second_layer_dim = [325, 275, 225]
 
     shadow_first_layer_dim = [450, 400, 350, 300, 250]

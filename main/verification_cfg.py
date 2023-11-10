@@ -1,3 +1,5 @@
+import json
+
 import torch
 import benign
 import extraction
@@ -13,7 +15,9 @@ import boundary
 from statistics import mean
 import time
 import os
-
+import yaml
+import itertools
+from datetime import timedelta
 
 def extract_logits(graph_data, specific_nodes, independent_model, surrogate_model):
     if torch.cuda.is_available():
@@ -51,7 +55,6 @@ def measure_logits(logits):
     distance_pair = {'label_0': independent_var, 'label_1': surrogate_var}
     
     return distance_pair
-
 
 def preprocess_data_flatten(distance_pairs:list):
     total_label0, total_label1 = list(), list()
@@ -107,7 +110,7 @@ def train_classifier(distance_pairs:list):
                 correct += (predictions == labels).sum().item()
 
             acc = correct / len(dataset) * 100
-            print(acc)
+            # print(acc)
             if acc == 100:
                 break
 
@@ -145,238 +148,258 @@ def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes):
     
     return predictions
 
-def generate_hidden_dims():
-    pass
 
-def batch_ownver(args):
-    model_save_root = os.path.join('../temp_results/model_states/', args.dataset, args.task_type)
-    original_first_layer_dim = [475]
-    original_second_layer_dim = [325, 275, 225]
+def join_path(*save_path):
+    original_model_save_root = os.path.join(*save_path)
+    if not os.path.exists(original_model_save_root):
+        os.makedirs(original_model_save_root)
+    return original_model_save_root
 
-    shadow_first_layer_dim = [450, 400, 350, 300, 250]
-    shadow_second_layer_dim = [225, 200, 175, 150, 125]
-    
-    ind_correct_num_list, ind_false_num_list = list(), list()
-    ext_correct_num_list, ext_false_num_list = list(), list()
+def join_name(hidden_dims):
+    str_dims = [str(n) for n in hidden_dims]
+    return "_".join(str_dims)
 
-    original_acc_list = list()
-    mask_acc_list = list()
-    shadow_independent_acc_list = list()
-    shadow_extraction_acc_list = list()
-    shadow_extraction_fide_list = list()
-    test_independent_acc_list = [list() for _  in range(3)] # gcn, gat, sage
-    test_extraction_acc_list = [list() for _  in range(3)]
-    test_extraction_fide_list = [list() for _ in range(3)]
-    time_list = list()
-    
-    
-    trial_index = 0
+def generate_combinations(layer_dims, num_hidden_layers):
+    combinations = list(itertools.product(layer_dims, repeat=num_hidden_layers))
+
+    # 将元组转换为列表，因为输出需要是列表的形式
+    return [list(combination) for combination in combinations]
 
 
-    for i in original_first_layer_dim:
-        for j in original_second_layer_dim:
-            print('starting trial {}'.format(trial_index))
-            trial_index += 1
-            original_layers = list()
-            original_layers.append(i)
-            original_layers.append(j)
-            original_layers.sort(reverse=True)
 
-            args.benign_model = 'gcn'
-            args.benign_hidden_dim = original_layers
-        
-            t0 = time.time()
-            original_model_save_root = os.path.join(model_save_root, 'original_models')
-            if not os.path.exists(original_model_save_root):
-                os.makedirs(original_model_save_root)
-            original_model_save_path = os.path.join(original_model_save_root,"{}_{}_{}.pt".format(args.benign_model, i, j))
-            original_graph_data, original_model, original_model_acc = benign.run(args, original_model_save_path)
+def random_generate_arch(layer_dims, num_hidden_layers, seed):
 
-            mask_graph_data, mask_nodes = boundary.mask_graph_data(args, original_graph_data, original_model)
-            # graphs_data = [mask_graph_data, original_graph_data[1], original_graph_data[2], original_graph_data[3]]
-            mask_model_save_root = os.path.join(model_save_root, "mask_models", args.mask_feat_type, "{}_{}".format(args.mask_node_ratio, args.mask_feat_ratio))
-            if not os.path.exists(mask_model_save_root):
-                os.makedirs(mask_model_save_root)
+    # first generate all possible arches, then shuffle, sample
+    def _generate_combinations(layer_dims, num_hidden_layer):
+        combinations = list(itertools.product(layer_dims, repeat=num_hidden_layer))
+        return [list(combination) for combination in combinations]
 
-            mask_model_save_name = "{}_{}_{}".format(args.benign_model, i, j)
-            mask_model_save_path = os.path.join(mask_model_save_root, "{}.pt".format(mask_model_save_name))
-            _, mask_model, mask_model_acc = benign.run(args, mask_model_save_path, mask_graph_data)
-            t1 = time.time()
-            original_acc_list.append(original_model_acc)
-            mask_acc_list.append(mask_model_acc)
-        
-            measure_nodes = []
-            for each_class_nodes in mask_nodes:
-                measure_nodes += each_class_nodes
-        
-        
-            pair_list = list()
-        
-            # train shadow models
-            t_train = 0
+    all_hidden_dims = []
+    for num_hidden_layer in num_hidden_layers:
+        all_hidden_dims += _generate_combinations(layer_dims, num_hidden_layer)
 
-            # TODO
-            independent_arch = ['gcn', "gat", "sage"]
-            extraction_arch = ['gcn', "gat", "sage"]
-            for k in range(len(independent_arch)):
-                args.benign_model = independent_arch[k]
-                args.extraction_model = extraction_arch[k]
-                for p in shadow_first_layer_dim:
-                    for q in shadow_second_layer_dim:
-                        shadow_layers = list()
-                        shadow_layers.append(p)
-                        shadow_layers.append(q)
-                        shadow_layers.sort(reverse=True)
-
-                        args.benign_hidden_dim = shadow_layers
-                        args.extraction_hidden_dim = shadow_layers
-                        t2 = time.time()
-                        
-                        independent_model_save_root = os.path.join(model_save_root, 'independent_models')
-                        if not os.path.exists(independent_model_save_root):
-                            os.makedirs(independent_model_save_root)
-                        independent_model_save_path = os.path.join(independent_model_save_root,  "train_{}_{}_{}.pt".format(args.benign_model, p, q))
-                        _, independent_model, independent_acc = benign.run(args, independent_model_save_path, original_graph_data)
-
-                        extraction_model_save_root = os.path.join(model_save_root, 'extraction_models', args.mask_feat_type,
-                                                                  mask_model_save_name, "{}_{}".format(args.mask_node_ratio, args.mask_feat_ratio))
-                        if not os.path.exists(extraction_model_save_root):
-                            os.makedirs(extraction_model_save_root)
-                        extraction_model_save_path = os.path.join(extraction_model_save_root, "train_{}_{}_{}.pt".format(args.extraction_model, p, q))
-                        extraction_model, extraction_acc, extraction_fide = extraction.run(args, extraction_model_save_path, original_graph_data, mask_model, 'test')
-                        t3 = time.time()
-                        t_train += (t3 - t2)
-
-                        shadow_independent_acc_list.append(independent_acc)
-                        shadow_extraction_acc_list.append(extraction_acc)
-                        shadow_extraction_fide_list.append(extraction_fide)
-
-                        t2 = time.time()
-                        logits = extract_logits(original_graph_data, measure_nodes, independent_model, extraction_model)
-                        variance_pair = measure_logits(logits)
-                        t3 = time.time()
-                        t_train += (t3 - t2)
-                        pair_list.append(variance_pair)
-            t2 = time.time()
-            classifier_model = train_classifier(pair_list)
-            t3 = time.time()
-            t_train += (t3 - t2)
-            t_total = (t1 - t0) + t_train
-            t_total = round(t_total, 3)
-            time_list.append(t_total)
-            sta0, sta1, sta2, sta3 = batch_unit_test(args, original_graph_data, mask_model, classifier_model, measure_nodes,
-                                                     test_independent_acc_list, test_extraction_acc_list, test_extraction_fide_list, mask_model_save_name)
-            ind_correct_num_list.append(sta0)
-            ind_false_num_list.append(sta1)
-            ext_correct_num_list.append(sta3)
-            ext_false_num_list.append(sta2)
-
-    TP, FN = sum(ind_correct_num_list), sum(ind_false_num_list) # True Positive, False Negative
-    TN, FP = sum(ext_correct_num_list), sum(ext_false_num_list) # True Negative, False Positive
-    print(TP, FN, TN, FP)
-    
-    accuracy = (TP + TN) / (TP + FN + TN + FP)
-    precision = TP / (TP + FP)
-    recall = TP / (TP + FN)
-    f1_score = (2 * precision * recall) / (precision + recall)
-
-    accuracy = round(accuracy, 3)
-    precision = round(precision, 3)
-    recall = round(recall, 3)
-    f1_score = round(f1_score, 3)
-    print('accuracy:', accuracy)
-    print('precision:', precision)
-    print('recall:', recall)
-    print('f1_score:', f1_score)
-
-    get_stats_of_list(original_acc_list, 'original accuracy:')
-    get_stats_of_list(mask_acc_list, 'mask accuracy:')
-    get_stats_of_list(shadow_independent_acc_list, 'shadow independent model accuracy:')
-    get_stats_of_list(shadow_extraction_acc_list, 'shadow extraction model accuracy:')
-    get_stats_of_list(shadow_extraction_fide_list, 'shadow extraction model fidelity:')
-    get_stats_of_list(test_independent_acc_list[0], 'test gcn independent model accuracy:')
-    get_stats_of_list(test_independent_acc_list[1], 'test gat independent model accuracy:')
-    get_stats_of_list(test_independent_acc_list[2], 'test sage independent model accuracy:')
-    get_stats_of_list(test_extraction_acc_list[0], 'test gcn extraction model accuracy:')
-    get_stats_of_list(test_extraction_fide_list[0], 'test gcn extraction model fidelity:')
-    get_stats_of_list(test_extraction_acc_list[1], 'test gat extraction model accuracy:')
-    get_stats_of_list(test_extraction_fide_list[1], 'test gat extraction model fidelity:')
-    get_stats_of_list(test_extraction_acc_list[2], 'test sage extraction model accuracy:')
-    get_stats_of_list(test_extraction_fide_list[2], 'test sage extraction model fidelity:')
-    get_stats_of_list(time_list, 'time consuming:')
-        
-
-def batch_unit_test(args, graph_data, mask_model, classifier_model, measure_nodes, independent_acc_list, extraction_acc_list, extraction_fide_list, mask_model_save_name):
-
-    model_save_root = os.path.join('../temp_results/model_states/', args.dataset, args.task_type)
-    independent_arch = ['gin']
-    extraction_arch = ['gin']
-    first_layers_dim = [425, 375, 325, 275, 225]
-    second_layers_dim = [160, 128, 96, 64, 32]
-    
-    overall_ind_pred0_num, overall_ind_pred1_num = 0, 0
-    overall_ext_pred0_num, overall_ext_pred1_num = 0, 0
-    
-    for i in range(len(independent_arch)):
-        args.benign_model = independent_arch[i]
-        args.extraction_model = extraction_arch[i]
-        for p in first_layers_dim:
-            for q in second_layers_dim:
-                test_model_layers = list()
-                test_model_layers.append(p)
-                test_model_layers.append(q)
-                test_model_layers.sort(reverse=True)
-
-                args.benign_hidden_dim = test_model_layers
-                args.extraction_hidden_dim = test_model_layers
-                
-                independent_model_save_root = os.path.join(model_save_root, 'independent_models')
-                if not os.path.exists(independent_model_save_root):
-                    os.makedirs(independent_model_save_root)
-                independent_model_save_path = os.path.join(independent_model_save_root, "test_{}_{}_{}.pt".format(args.benign_model, p, q))
-                _, test_independent_model, test_independent_acc = benign.run(args, independent_model_save_path, graph_data)
-
-                extraction_model_save_root = os.path.join(model_save_root, 'extraction_models', args.mask_feat_type, mask_model_save_name,
-                                                          "{}_{}".format(args.mask_node_ratio, args.mask_feat_ratio))
-
-                if not os.path.exists(extraction_model_save_root):
-                    os.makedirs(extraction_model_save_root)
-                extraction_model_save_path = os.path.join(extraction_model_save_root, 'test_{}_{}_{}.pt'.format(args.extraction_model, p, q)  )
-                test_extraction_model, test_extraction_acc, test_extraction_fide = extraction.run(args, extraction_model_save_path, graph_data, mask_model, 'test')
-
-                independent_acc_list[i].append(test_independent_acc)
-                extraction_acc_list[i].append(test_extraction_acc)
-                extraction_fide_list[i].append(test_extraction_fide)
-
-                ind_pred = owner_verify(graph_data, test_independent_model, classifier_model, measure_nodes)
-                ext_pred = owner_verify(graph_data, test_extraction_model, classifier_model, measure_nodes)
-
-                if ind_pred == 0:
-                    overall_ind_pred0_num += 1
-                else:
-                    overall_ind_pred1_num += 1
-                if ext_pred == 0:
-                    overall_ext_pred0_num += 1
-                else:
-                    overall_ext_pred1_num += 1
-    
-    return overall_ind_pred0_num, overall_ind_pred1_num, overall_ext_pred0_num, overall_ext_pred1_num
+    random.seed(seed)
+    random.shuffle(all_hidden_dims)
+    return all_hidden_dims
 
 
-def get_stats_of_list(l, flag):
-    mean_value = round(mean(l), 3)
-    max_value = round(max(l), 3)
-    min_value = round(min(l), 3)
+class GNNVerification():
+    def __init__(self, args, global_cfg, train_setting_cfg, test_setting_cfg):
+        self.global_cfg = global_cfg
 
-    print(flag)
-    print(mean_value, max_value, min_value)
+        self.test_setting_cfg = test_setting_cfg
+        self.train_setting_cfg = train_setting_cfg
+        self.args = args
+        self.train_save_root = os.path.join(global_cfg["train_save_root"], args.dataset, args.task_type)
+        self.test_save_root = os.path.join(global_cfg["test_save_root"], args.dataset, args.task_type)
+        # one experimental setting
 
-    return mean_value, max_value, min_value
+        self.mask_model_save_name = "{}_{}".format(self.global_cfg["target_model"], join_name(self.global_cfg["target_hidden_dims"]))
+
+    def train_original_model(self):
+        # save original model
+        original_model_save_root = join_path(self.train_save_root, 'original_models')
+        original_model_save_path = os.path.join(original_model_save_root,
+                                                "{}_{}.pt".format(args.benign_model, join_name(self.global_cfg["target_hidden_dims"])))
+        return benign.run(args, original_model_save_path)
+
+    def geneate_mask_model(self):
+
+        # generate mask model
+        mask_graph_data, mask_nodes = boundary.mask_graph_data(self.args, self.original_graph_data, self.original_model)
+        mask_model_save_root = join_path(self.train_save_root, "mask_models", self.args.mask_feat_type,
+                                         "{}_{}".format(self.args.mask_node_ratio, self.args.mask_feat_ratio))
+
+        mask_model_save_path = os.path.join(mask_model_save_root, "{}.pt".format(self.mask_model_save_name))
+        _, mask_model, mask_model_acc = benign.run(self.args, mask_model_save_path, mask_graph_data)
+
+        measure_nodes = []
+        for each_class_nodes in mask_nodes:
+            measure_nodes += each_class_nodes
+
+        return mask_model, mask_model_acc, measure_nodes
+
+    # all model generate by this function will automaticly add a final layer for grove
+    def train_models_by_arch(self, setting_cfg, model_arch, model_save_root, seed,
+                             mask_model_save_name=None, mask_model=None, stage="train"):
+
+        hidden_dims_generator = random_generate_arch(setting_cfg["layer_dims"], setting_cfg["num_hidden_layers"],
+                                                     seed=seed)
+
+        if len(hidden_dims_generator) < setting_cfg["num_model_per_arch"]:
+            raise Exception("Can not generate enough unique model hidden dims, please reduce num_model_per_arch")
+
+        model_list, acc_list, fidelity_list = [], [], []
+        # generate num_model_per_arch models
+        for hidden_dims, _ in zip(hidden_dims_generator, list(range(setting_cfg["num_model_per_arch"]))):
+
+            # Important! add a fixed layer
+            hidden_dims.append(self.global_cfg["embedding_dim"])
+            if mask_model is None:
+                # layer_dim, num_hidden_layers
+                args.benign_hidden_dim = hidden_dims
+                args.benign_model = model_arch
+                # train independent model
+                independent_model_save_root = join_path(model_save_root, 'independent_models')
+                independent_model_save_path = os.path.join(independent_model_save_root,
+                                                           "{}_{}_{}.pt".format(stage, args.benign_model,
+                                                                                join_name(hidden_dims)))
+                _, model, model_acc = benign.run(args, independent_model_save_path, self.original_graph_data)
+
+            else:
+                args.extraction_hidden_dim = hidden_dims
+                args.extraction_model = model_arch
+                extraction_model_save_root = join_path(model_save_root, 'extraction_models', args.mask_feat_type,
+                                                       mask_model_save_name,
+                                                       "{}_{}".format(args.mask_node_ratio, args.mask_feat_ratio))
+                extraction_model_save_path = os.path.join(extraction_model_save_root,
+                                                          "{}_{}_{}.pt".format(stage, args.extraction_model,
+                                                                               join_name(hidden_dims)))
+                model, model_acc, fidelity = extraction.run(args, extraction_model_save_path,
+                                                            self.original_graph_data, mask_model, 'test')
+                fidelity_list.append(fidelity)
+
+            model_list.append(model)
+            acc_list.append(model_acc)
+
+        return model_list, acc_list, fidelity_list
+    # This function train all models accroding to setting config
+    def train_models_by_setting(self, setting_cfg,  model_save_root, mask_model_save_name=None, mask_model=None, stage="train"):
+        all_model_list, all_acc_list, all_fidelity_list = [], [], []
+        for seed, model_arch in enumerate(setting_cfg["model_arches"]):
+            model_list, acc_list, fidelity_list = self.train_models_by_arch(setting_cfg, model_arch, model_save_root, seed, mask_model_save_name,
+                                                                       mask_model=mask_model, stage=stage)
+            all_model_list += model_list
+            all_acc_list.append(acc_list)
+
+            if mask_model is not None:
+                all_fidelity_list.append(fidelity_list)
+
+        return all_model_list, all_acc_list, all_fidelity_list
+
+    def run_single_experiment(self):
+        save_json = {}
+
+        start = time.time()
+        # train original model
+        self.original_graph_data, self.original_model, self.original_model_acc = self.train_original_model()
+
+        # generate mask model
+        mask_start = time.time()
+        self.mask_model, self.mask_model_acc, self.measure_nodes = self.geneate_mask_model()
+        mask_run_time = time.time() - mask_start
+
+        # train independent model
+        train_inde_model_list, train_inde_acc_list, _ = self.train_models_by_setting(self.train_setting_cfg, self.train_save_root,
+                                                                          mask_model=None, stage="train")
+        # train surrogate model
+        train_surr_model_list, train_surr_acc_list, train_surr_fidelity_list = self.train_models_by_setting(self.train_setting_cfg,
+                                                                                                 self.train_save_root, self.mask_model_save_name,
+                                                                                                            self.mask_model, stage="train")
+
+        # extract
+        pair_list = []
+        for independent_model, extraction_model in zip(train_inde_model_list, train_surr_model_list):
+            logits = extract_logits(self.original_graph_data, self.measure_nodes, independent_model, extraction_model)
+            variance_pair = measure_logits(logits)
+            pair_list.append(variance_pair)
+
+        classifier_model = train_classifier(pair_list)
+
+        # train independent  model
+        test_inde_model_list, test_inde_acc_list, _ = self.train_models_by_setting(self.test_setting_cfg,  self.test_save_root,
+                                                                      mask_model=None, stage="test")
+        # train surrogate model
+        test_surr_model_list, test_surr_acc_list, test_surr_fidelity_list = self.train_models_by_setting(
+                                                                    self.test_setting_cfg, self.test_save_root,
+                                                                    self.mask_model_save_name, self.mask_model, stage="test")
+
+        TN, FP, FN, TP = 0, 0, 0, 0
+        for test_independent_model, test_extraction_model in zip(test_inde_model_list, test_surr_model_list):
+            ind_pred = owner_verify(self.original_graph_data, test_independent_model, classifier_model, self.measure_nodes)
+            ext_pred = owner_verify(self.original_graph_data, test_extraction_model, classifier_model, self.measure_nodes)
+
+            if ind_pred == 0:
+                TN += 1
+            else:
+                FP += 1
+
+            if ext_pred == 0:
+                FN += 1
+            else:
+                TP += 1
 
 
-    
+        FPR = FP / (FP + TN)
+        FNR = FN / (FN + TP)
+        Accuracy = (TP + TN) / (TN + FP + TP + FN)
+
+        # save to a
+        save_json["TN"], save_json["TP"] = TN,  TP
+        save_json["FN"], save_json["FP"] = FN, FP
+        save_json["FPR"], save_json["FNR"] = FPR, FNR
+
+        save_json["Accuracy"] = Accuracy
+        save_json["original_model_acc"] = self.original_model_acc
+        save_json["mask_model_acc"] = self.mask_model_acc
+        save_json["train_inde_acc_list"] = train_inde_acc_list
+        save_json["train_surr_acc_list"] = train_surr_acc_list
+        save_json["train_surr_fidelity_list"] = train_surr_fidelity_list
+
+        save_json["test_inde_acc_list"] = test_inde_acc_list
+        save_json["test_surr_acc_list"] = test_surr_acc_list
+        save_json["test_surr_fidelity_list"] = test_surr_fidelity_list
+
+        json_save_root = join_path(self.global_cfg["res_path"], args.dataset, args.task_type, self.args.mask_feat_type,
+                                               "{}_{}".format(args.mask_node_ratio, args.mask_feat_ratio))
+
+        save_json["total_time"] = time.time()-start
+        save_json["mask_run_time"] = mask_run_time
+        with open("{}/{}_trainsetting{}_testsetting{}.json".format(json_save_root, self.mask_model_save_name,
+                                                                   self.global_cfg["train_setting"],
+                                                                    self.global_cfg["test_setting"]), "w") as f:
+            f.write(json.dumps(save_json))
+
+        return TP, FN, TN, FP
+
+def multiple_experiments():
+
+    config_path = "../config"
+    with open(os.path.join(config_path, "global_cfg.yaml"), 'r') as file:
+        global_cfg = yaml.safe_load(file)
+
+    # ['dblp', 'citeseer_full', 'pubmed', 'coauthor_phy', 'acm', 'amazon_photo']
+    target_arch_list = ["gat", "gcn", "sage"]
+    target_hidden_dim_list = [[352, 256],[288, 256],[224, 256]]
+    attack_setting_list = [2]
+
+    # load setting
+    with open(os.path.join(config_path,'train_setting{}.yaml'.format(global_cfg["train_setting"])), 'r') as file:
+        train_setting_cfg = yaml.safe_load(file)
+
+    grid_params = []
+    for dataset in [global_cfg["dataset"]]:
+        for test_setting in attack_setting_list:
+            for target_arch in target_arch_list:
+                for target_hidden_dims in target_hidden_dim_list:
+                    grid_params.append([dataset, test_setting, target_arch, target_hidden_dims])
+
+
+    for dataset, test_setting, target_arch, target_hidden_dims in grid_params:
+        args.dataset = dataset
+        global_cfg['test_setting'] = test_setting
+        global_cfg['target_model'] = target_arch
+        global_cfg['target_hidden_dims'] = target_hidden_dims
+
+        # load setting
+        with open(os.path.join(config_path, 'test_setting{}.yaml'.format(test_setting)), 'r') as file:
+            test_setting_cfg = yaml.safe_load(file)
+
+        gnn_verification = GNNVerification(args, global_cfg, train_setting_cfg, test_setting_cfg)
+        gnn_verification.run_single_experiment()
+
 if __name__ == '__main__':
     from utils.config import parse_args
     args = parse_args()
     # ownver(args)
-    batch_ownver(args)
+    multiple_experiments()

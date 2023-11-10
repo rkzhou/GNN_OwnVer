@@ -1,6 +1,12 @@
 target_model: gat
-output_type: embedding
-dataset: citeseer_full
+target_hidden_dims: [352, 256]
+dataset: Citeseer
 train_setting: 1
 test_setting: 1
 embedding_dim: 256
+
+train_save_root: ../temp_results/model_states/
+test_save_root: ../temp_results/model_states/
+res_path: ../res/
+
+

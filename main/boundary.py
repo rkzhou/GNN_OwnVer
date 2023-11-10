@@ -1,3 +1,5 @@
+import os
+
 import utils.graph_operator
 import random
 import copy
@@ -28,7 +30,13 @@ def mask_graph_data(args, graph_data, model):
         elif args.mask_feat_type == 'mask_by_dataset':
             mask_features = find_mask_features_overall(args, graph_data, mask_feat_num)
         elif args.mask_feat_type == 'mask_by_node':
-            path = Path('../temp_results/feature_importances/{}/{}.pkl'.format(args.dataset, args.task_type))
+
+            pkl_save_path = "../temp_results/feature_importances/{}/".format(args.dataset)
+            if not os.path.exists(pkl_save_path):
+                os.makedirs(pkl_save_path)
+
+            path = Path('{}/{}.pkl'.format(pkl_save_path, args.task_type))
+
             if path.is_file():
                 with open(path, 'rb') as f:
                     feat_importances = pickle.load(f)

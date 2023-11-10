@@ -41,6 +41,9 @@ def transductive_train(args, model_save_path, graph_data):
             gnn_model = model.gnn_models.GAT(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim)
         elif args.benign_model == 'gin':
             gnn_model = model.gnn_models.GIN(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim)
+        elif args.benign_model == 'sgc':
+            gnn_model = model.gnn_models.SGC(gdata.feat_dim, gdata.class_num, hidden_dim=args.benign_hidden_dim)
+
         gnn_model.to(device)
 
         optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr)
@@ -120,6 +123,11 @@ def inductive_train(args, model_save_path, graph_data):
             gnn_model = model.gnn_models.GraphSage(target_graph_data.feat_dim, target_graph_data.class_num, hidden_dim=args.benign_hidden_dim)
         elif args.benign_model == 'gat':
             gnn_model = model.gnn_models.GAT(target_graph_data.feat_dim, target_graph_data.class_num, hidden_dim=args.benign_hidden_dim)
+        elif args.benign_model == 'gin':
+            gnn_model = model.gnn_models.GIN(target_graph_data.feat_dim, target_graph_data.class_num, hidden_dim=args.benign_hidden_dim)
+        elif args.benign_model == 'sgc':
+            gnn_model = model.gnn_models.SGC(target_graph_data.feat_dim, target_graph_data.class_num, hidden_dim=args.benign_hidden_dim)
+
         gnn_model.to(device)
 
         loss_fn = torch.nn.CrossEntropyLoss()
