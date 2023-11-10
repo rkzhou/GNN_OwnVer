@@ -181,11 +181,11 @@ def double_extraction(args, models_folder_path):
                 layers.append(int(i))
             args.extraction_hidden_dim = layers
 
-            _, extraction_acc, extraction_fide = extraction.run(args, double_extraction_model_save_path, graph_data, gnn_model, 'test', 'retrain_anyway')
+            _, extraction_acc, extraction_fide = extraction.run(args, double_extraction_model_save_path, graph_data, gnn_model, 'test')
             print(extraction_acc, extraction_fide)
 
 
 if __name__ == '__main__':
     args = parse_args()
     path = '../temp_results/model_states/Citeseer/transductive/extraction_models/mask_by_node/gat_224_256/0.5_0.5/'
-    double_extraction(args, path)
+    fine_tune(args, path)

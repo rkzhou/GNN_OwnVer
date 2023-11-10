@@ -70,27 +70,48 @@ def preprocess_data_flatten(distance_pairs:list):
 
     return processed_data
 
+def pair_to_dataloader(distance_pairs, batch_size=5):
+    processed_data = preprocess_data_flatten(distance_pairs)
+    dataset = utils.datareader.VarianceData(processed_data['label0'], processed_data['label1'])
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    return dataloader
 
-def train_classifier(distance_pairs:list):
+class EarlyStopper:
+    def __init__(self, patience=5, min_delta=0.1):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.min_validation_loss = float('inf')
+
+    def early_stop(self, validation_loss):
+        if validation_loss < self.min_validation_loss:
+            self.min_validation_loss = validation_loss
+            self.counter = 0
+        elif validation_loss > (self.min_validation_loss + self.min_delta):
+            self.counter += 1
+            if self.counter >= self.patience:
+                return True
+        return False
+
+def train_classifier(train_distance_pairs, val_distance_pairs):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
-    
-    processed_data = preprocess_data_flatten(distance_pairs)
-    dataset = utils.datareader.VarianceData(processed_data['label0'], processed_data['label1'])
-    dataloader = DataLoader(dataset, batch_size=10, shuffle=True)
-    
+    train_loader = pair_to_dataloader(train_distance_pairs)
+    val_loader = pair_to_dataloader(val_distance_pairs)
     hidden_layers = [128, 64]
-    model = mlp_nn(dataset.data.shape[1], hidden_layers)
+    model = mlp_nn(train_loader.dataset.data.shape[1], hidden_layers)
     loss_fn = torch.nn.CrossEntropyLoss()
+    # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     epoch_num = 1000
-    
+
     model.to(device)
+    early_stopper = EarlyStopper(patience=5, min_delta=0.00001)
     for epoch_index in range(epoch_num):
         model.train()
-        for _, (inputs, labels) in enumerate(dataloader):
+        for _, (inputs, labels) in enumerate(train_loader):
             optimizer.zero_grad()
             inputs = inputs.to(device)
             labels = labels.to(device)
@@ -98,25 +119,51 @@ def train_classifier(distance_pairs:list):
             loss = loss_fn(outputs, labels)
             loss.backward()
             optimizer.step()
-        
-        if (epoch_index + 1) % 100 == 0:
-            model.eval()
-            correct = 0
-            for _, (inputs, labels) in enumerate(dataloader):
-                inputs = inputs.to(device)
-                labels = labels.to(device)
-                outputs = model(inputs)
-                _, predictions = torch.max(outputs.data, 1)
-                correct += (predictions == labels).sum().item()
 
-            acc = correct / len(dataset) * 100
-            # print(acc)
-            if acc == 100:
-                break
+        model.eval()
+        validation_loss = []
+        for _, (inputs, labels) in enumerate(val_loader):
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            outputs = model(inputs)
+            val_loss = loss_fn(outputs, labels)
+            validation_loss.append(val_loss.item())
 
-    
-    return model
-        
+        if early_stopper.early_stop(mean(validation_loss)):
+            break
+
+            # if val_acc == 100:
+            #     break
+    return model, early_stopper.min_validation_loss
+
+def k_fold_split(data, k=5):
+    """将数据分割为k个部分，并迭代地返回训练集和测试集"""
+    fold_size = len(data) // k
+
+    for i in range(k):
+        start = i * fold_size
+        end = start + fold_size
+
+        test = data[start:end]
+        train = data[:start] + data[end:]
+
+        yield train, test
+
+
+def train_k_fold(distance_pairs):
+    random.shuffle(distance_pairs)
+
+    min_loss = 100
+    best_model = None
+    for fold, (train_set, test_set) in enumerate(k_fold_split(distance_pairs, 5)):
+
+        model, val_loss = train_classifier(train_set, test_set)
+        if val_loss < min_loss:
+            best_model = model
+
+    return best_model
+
+
 def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes):
     if torch.cuda.is_available():
         device = torch.device('cuda')
@@ -159,28 +206,30 @@ def join_name(hidden_dims):
     str_dims = [str(n) for n in hidden_dims]
     return "_".join(str_dims)
 
-def generate_combinations(layer_dims, num_hidden_layers):
-    combinations = list(itertools.product(layer_dims, repeat=num_hidden_layers))
-
-    # 将元组转换为列表，因为输出需要是列表的形式
-    return [list(combination) for combination in combinations]
-
-
-
 def random_generate_arch(layer_dims, num_hidden_layers, seed):
 
     # first generate all possible arches, then shuffle, sample
     def _generate_combinations(layer_dims, num_hidden_layer):
         combinations = list(itertools.product(layer_dims, repeat=num_hidden_layer))
-        return [list(combination) for combination in combinations]
+        return [sorted(list(combination), reverse=True) for combination in combinations]
 
     all_hidden_dims = []
     for num_hidden_layer in num_hidden_layers:
-        all_hidden_dims += _generate_combinations(layer_dims, num_hidden_layer)
 
-    random.seed(seed)
-    random.shuffle(all_hidden_dims)
-    return all_hidden_dims
+        _hidden_dims = _generate_combinations(layer_dims, num_hidden_layer)
+        random.seed(seed)
+        random.shuffle(_hidden_dims)
+        all_hidden_dims.append(_hidden_dims)
+
+    # TODO not deduplicate
+    res = []
+
+    for i in range(len(all_hidden_dims[-1])):
+        for j in range(len(num_hidden_layers)):
+            if i < len(all_hidden_dims[j]):
+                res.append(all_hidden_dims[j][i])
+
+    return res
 
 
 class GNNVerification():
@@ -304,7 +353,7 @@ class GNNVerification():
             variance_pair = measure_logits(logits)
             pair_list.append(variance_pair)
 
-        classifier_model = train_classifier(pair_list)
+        classifier_model = train_k_fold(pair_list)
 
         # train independent  model
         test_inde_model_list, test_inde_acc_list, _ = self.train_models_by_setting(self.test_setting_cfg,  self.test_save_root,
@@ -350,21 +399,20 @@ class GNNVerification():
         save_json["test_surr_acc_list"] = test_surr_acc_list
         save_json["test_surr_fidelity_list"] = test_surr_fidelity_list
 
-        json_save_root = join_path(self.global_cfg["res_path"], self.args.dataset, self.args.task_type, self.args.mask_feat_type,
-                                               "{}_{}".format(self.args.mask_node_ratio, self.args.mask_feat_ratio))
-
         save_json["total_time"] = time.time()-start
         save_json["mask_run_time"] = mask_run_time
-        with open("{}/{}_trainsetting{}_testsetting{}.json".format(json_save_root, self.mask_model_save_name,
-                                                                   self.global_cfg["train_setting"],
-                                                                    self.global_cfg["test_setting"]), "w") as f:
+
+        json_save_root = join_path(self.global_cfg["res_path"], self.args.dataset, self.args.task_type, self.args.mask_feat_type,
+                                               "{}_{}".format(self.args.mask_node_ratio, self.args.mask_feat_ratio))
+        json_save_root = join_path(json_save_root,"train_setting{}".format(self.global_cfg["train_setting"]), "test_setting{}".format(self.global_cfg["test_setting"]))
+
+        with open("{}/{}.json".format(json_save_root, self.mask_model_save_name), "w") as f:
             f.write(json.dumps(save_json))
 
         with open("{}/train_setting.yaml".format(json_save_root), "w") as f:
             yaml.dump(self.train_setting_cfg, f, default_flow_style=False)
         with open("{}/test_setting.yaml".format(json_save_root), "w") as f:
             yaml.dump(self.test_setting_cfg, f, default_flow_style=False)
-
 
         return TP, FN, TN, FP
 
@@ -376,8 +424,8 @@ def multiple_experiments(args):
 
     # ['dblp', 'citeseer_full', 'pubmed', 'coauthor_phy', 'acm', 'amazon_photo']
     target_arch_list = ["gat", "gcn", "sage"]
-    target_hidden_dim_list = [[352, 256],[288, 256],[224, 256]]
-    attack_setting_list = [2]
+    target_hidden_dim_list = [[352, 128],[288, 128],[224, 128]]
+    attack_setting_list = [1,3,4]
 
     # load setting
     with open(os.path.join(config_path,'train_setting{}.yaml'.format(global_cfg["train_setting"])), 'r') as file:
@@ -408,4 +456,9 @@ def multiple_experiments(args):
         gnn_verification.run_single_experiment()
 
 if __name__ == '__main__':
-    pass
+    from utils.config import parse_args
+    # from verification_cfg import multiple_experiments
+
+    args = parse_args()
+    # ownver(args)
+    multiple_experiments(args)
