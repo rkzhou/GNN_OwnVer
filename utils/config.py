@@ -19,6 +19,7 @@ def add_benign_model_group(group):
     group.add_argument('--benign_train_epochs', type=int, default=1000)
     group.add_argument('--benign_lr', type=float, default=0.001)
     group.add_argument('--antidistill_train_ratio', type=float, default=0.1)
+    group.add_argument('--benign_model_situation', type=str, default='load_if_exists')
 
 
 def add_backdoor_model_group(group):
@@ -33,12 +34,14 @@ def add_backdoor_model_group(group):
 
 
 def add_extraction_model_group(group):
-    group.add_argument('--extraction_model', type=str, default='gcnExtract', help="used model")
+    group.add_argument('--extraction_model', type=str, default='gcn', help="used model")
     group.add_argument('--extraction_hidden_dim', nargs='+', default=[64, 32], type=int, help='hidden layers of the model')
     group.add_argument('--extraction_train_epochs', type=int, default=1000)
     group.add_argument('--extraction_lr', type=float, default=0.001)
     group.add_argument('--extraction_method', type=str, default='black_box')
     group.add_argument('--extraction_ratio', type=float, default=0.5)
+    group.add_argument('--extraction_model_situation', type=str, default='load_if_exists')
+    group.add_argument('--double_extraction_model_situation', type=str, default='write_anyway')
 
 
 def parse_args():

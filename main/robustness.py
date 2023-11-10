@@ -1,169 +1,191 @@
 import torch
-import benign
-import extraction
 import random
 import math
-import utils.datareader
-import model.gnn_models
-import model.extraction_models
-from torch.utils.data import DataLoader
-from tqdm import tqdm
-from model.mlp import mlp_nn
-import boundary
-from statistics import mean
-import time
 import os
+import sys
+sys.path.append(os.path.abspath('..'))
+from utils.config import parse_args
+import utils.datareader
+import utils.graph_operator
+import extraction
 
-def fine_tune(args):
-    model_save_root = os.path.join('../robustness_test/model_states/', args.dataset, args.task_type)
-
-    shadow_first_layer_dim = [450, 400, 350, 300, 250]
-    shadow_second_layer_dim = [225, 200, 175, 150, 125]
+def fine_tune(args, models_folder_path):
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
     
-    ind_correct_num_list, ind_false_num_list = list(), list()
-    ext_correct_num_list, ext_false_num_list = list(), list()
+    substring_path = models_folder_path.split('/')
+    substring_path.remove('..')
+    substring_path.remove('')
+    substring_path.remove('temp_results')
 
-    original_acc_list = list()
-    mask_acc_list = list()
-    shadow_independent_acc_list = list()
-    shadow_extraction_acc_list = list()
-    shadow_extraction_fide_list = list()
-    test_independent_acc_list = [list() for _  in range(4)] # gcn, gat, sage
-    test_extraction_acc_list = [list() for _  in range(4)]
-    test_extraction_fide_list = [list() for _ in range(4)]
-    time_list = list()
+    fine_tune_models_save_root = '../robustness_results/fine_tune'
+    for i in substring_path:
+        fine_tune_models_save_root = os.path.join(fine_tune_models_save_root, i)
+    if not os.path.exists(fine_tune_models_save_root):
+        os.makedirs(fine_tune_models_save_root)
     
+    data = utils.datareader.get_data(args)
+    graph_data = utils.datareader.GraphData(data, args)
+    if args.task_type == 'inductive':
+        _, _, _, test_graph_data = utils.graph_operator.split_subgraph(graph_data)
+    loss_fn = torch.nn.CrossEntropyLoss()
+    predict_fn = lambda output: output.max(1, keepdim=True)[1]
+
+    with os.scandir(models_folder_path) as itr:
+        for entry in itr:
+            if 'train' in entry.name:
+                continue
+
+            original_model_load_path = os.path.join(models_folder_path, entry.name)
+            fine_tune_model_save_path = os.path.join(fine_tune_models_save_root, entry.name)
+            gnn_model = torch.load(original_model_load_path)
+            gnn_model.to(device)
+            gnn_model.train()
+            optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr)
+
+            # use testing dataset to fine-tune extraction models
+            last_train_acc = 0.0
+            if args.task_type == 'transductive':
+                for epoch in range(args.benign_train_epochs):
+                    optimizer.zero_grad()
+                    input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
+                    labels = graph_data.labels.to(device)
+                    _, output = gnn_model(input_data)
+                    loss = loss_fn(output[graph_data.test_nodes_index], labels[graph_data.test_nodes_index])
+                    loss.backward()
+                    optimizer.step()
+
+                    train_correct_num = 0
+                    if (epoch + 1) % 100 == 0:
+                        _, output = gnn_model(input_data)
+                        pred = predict_fn(output)
+                        train_pred = pred[graph_data.test_nodes_index]
+                        train_labels = graph_data.labels[graph_data.test_nodes_index]
+                        for i in range(train_pred.shape[0]):
+                            if train_pred[i, 0] == train_labels[i]:
+                                train_correct_num += 1
+                        train_acc = train_correct_num / train_pred.shape[0] * 100
+                        if last_train_acc == 0.0:
+                            last_train_acc = train_acc
+                        else:
+                            train_acc_diff = (train_acc - last_train_acc) / last_train_acc * 100
+                            if train_acc_diff <= 0.5: #0.5%
+                                break
+                            else:
+                                last_train_acc = train_acc
+            elif args.task_type == 'inductive':
+                for epoch in range(args.benign_train_epochs):
+                    optimizer.zero_grad()
+                    input_data = test_graph_data.features.to(device), test_graph_data.adjacency.to(device)
+                    labels = test_graph_data.labels.to(device)
+                    _, output = gnn_model(input_data)
+                    loss = loss_fn(output, labels)
+                    loss.backward()
+                    optimizer.step()
+
+                    train_correct_num = 0
+                    if (epoch + 1) % 100 == 0:
+                        _, output = gnn_model(input_data)
+                        predictions = predict_fn(output)
+                
+                        for i in range(predictions.shape[0]):
+                            if predictions[i, 0] == labels[i]:
+                                train_correct_num += 1
+                        train_acc = train_correct_num / predictions.shape[0] * 100
+
+                        if last_train_acc == 0.0:
+                            last_train_acc = train_acc
+                        else:
+                            train_acc_diff = (train_acc - last_train_acc) / last_train_acc * 100
+                            if train_acc_diff <= 0.5: #0.5%
+                                break
+                            else:
+                                last_train_acc = train_acc
+
+            torch.save(gnn_model, fine_tune_model_save_path)
+
+
+def prune(args, models_folder_path):
+    substring_path = models_folder_path.split('/')
+    substring_path.remove('..')
+    substring_path.remove('')
+    substring_path.remove('temp_results')
+
+    prune_models_save_root = '../robustness_results/prune'
+    for i in substring_path:
+        prune_models_save_root = os.path.join(prune_models_save_root, i)
+    if not os.path.exists(prune_models_save_root):
+        os.makedirs(prune_models_save_root)
+
+    with os.scandir(models_folder_path) as itr:
+        for entry in itr:
+            if 'train' in entry.name:
+                continue
+            
+            original_model_load_path = os.path.join(models_folder_path, entry.name)
+            prune_model_save_path = os.path.join(prune_models_save_root, entry.name)
+            gnn_model = torch.load(original_model_load_path)
+
+            for name, param in gnn_model.named_parameters():
+                if 'fc' in name:
+                    continue
+                if 'bias' in name:
+                    continue
+                
+                original_param_shape = param.data.shape
+                temp_param = torch.flatten(param.data)
+                prune_num = math.floor(temp_param.shape[0] * args.prune_weight_ratio)
+                prune_index = [i for i in range(temp_param.shape[0])]
+                random.shuffle(prune_index)
+                prune_index = prune_index[:prune_num]
+                temp_param[prune_index] = 0
+                param.data = temp_param.reshape(original_param_shape)
+                
+            torch.save(gnn_model, prune_model_save_path)
+
+
+def double_extraction(args, models_folder_path):
+    substring_path = models_folder_path.split('/')
+    substring_path.remove('..')
+    substring_path.remove('')
+    substring_path.remove('temp_results')
+
+    double_extraction_models_save_root = '../robustness_results/double_extraction'
+    for i in substring_path:
+        double_extraction_models_save_root = os.path.join(double_extraction_models_save_root, i)
+    if not os.path.exists(double_extraction_models_save_root):
+        os.makedirs(double_extraction_models_save_root)
     
-    trial_index = 0
-
-
-    for i in original_first_layer_dim:
-        for j in original_second_layer_dim:
-            print('starting trial {}'.format(trial_index))
-            trial_index += 1
-            original_layers = list()
-            original_layers.append(i)
-            original_layers.append(j)
-            original_layers.sort(reverse=True)
-
-            args.benign_model = 'gcn'
-            args.benign_hidden_dim = original_layers
-        
-            t0 = time.time()
-            original_model_save_root = os.path.join(model_save_root, 'original_models')
-            if not os.path.exists(original_model_save_root):
-                os.makedirs(original_model_save_root)
-            original_model_save_path = os.path.join(original_model_save_root,"{}_{}_{}.pt".format(args.benign_model, i, j))
-            original_graph_data, original_model, original_model_acc = benign.run(args, original_model_save_path)
-
-            mask_graph_data, mask_nodes = boundary.mask_graph_data(args, original_graph_data, original_model)
-            # graphs_data = [mask_graph_data, original_graph_data[1], original_graph_data[2], original_graph_data[3]]
-            mask_model_save_root = os.path.join(model_save_root, "mask_models", args.mask_feat_type, "{}_{}".format(args.mask_node_ratio, args.mask_feat_ratio))
-            if not os.path.exists(mask_model_save_root):
-                os.makedirs(mask_model_save_root)
-
-            mask_model_save_name = "{}_{}_{}".format(args.benign_model, i, j)
-            mask_model_save_path = os.path.join(mask_model_save_root, "{}.pt".format(mask_model_save_name))
-            _, mask_model, mask_model_acc = benign.run(args, mask_model_save_path, mask_graph_data)
-            t1 = time.time()
-            original_acc_list.append(original_model_acc)
-            mask_acc_list.append(mask_model_acc)
-        
-            measure_nodes = []
-            for each_class_nodes in mask_nodes:
-                measure_nodes += each_class_nodes
-        
-        
-            pair_list = list()
-        
-            # train shadow models
-            t_train = 0
-
-            independent_arch = ['gcn', 'gat', 'sage']
-            extraction_arch = ['gcn', 'gat', 'sage']
-            for k in range(len(independent_arch)):
-                args.benign_model = independent_arch[k]
-                args.extraction_model = extraction_arch[k]
-                for p in shadow_first_layer_dim:
-                    for q in shadow_second_layer_dim:
-                        shadow_layers = list()
-                        shadow_layers.append(p)
-                        shadow_layers.append(q)
-                        shadow_layers.sort(reverse=True)
-
-                        args.benign_hidden_dim = shadow_layers
-                        args.extraction_hidden_dim = shadow_layers
-                        t2 = time.time()
-                        
-                        independent_model_save_root = os.path.join(model_save_root, 'independent_models')
-                        if not os.path.exists(independent_model_save_root):
-                            os.makedirs(independent_model_save_root)
-                        independent_model_save_path = os.path.join(independent_model_save_root,  "train_{}_{}_{}.pt".format(args.benign_model, p, q))
-                        _, independent_model, independent_acc = benign.run(args, independent_model_save_path, original_graph_data)
-
-                        extraction_model_save_root = os.path.join(model_save_root, 'extraction_models', args.mask_feat_type,
-                                                                  mask_model_save_name, "{}_{}".format(args.mask_node_ratio, args.mask_feat_ratio))
-                        if not os.path.exists(extraction_model_save_root):
-                            os.makedirs(extraction_model_save_root)
-                        extraction_model_save_path = os.path.join(extraction_model_save_root, "train_{}_{}_{}.pt".format(args.extraction_model, p, q))
-                        extraction_model, extraction_acc, extraction_fide = extraction.run(args, extraction_model_save_path, original_graph_data, mask_model, 'train')
-                        t3 = time.time()
-                        t_train += (t3 - t2)
-
-                        shadow_independent_acc_list.append(independent_acc)
-                        shadow_extraction_acc_list.append(extraction_acc)
-                        shadow_extraction_fide_list.append(extraction_fide)
-
-                        t2 = time.time()
-                        logits = extract_logits(original_graph_data, measure_nodes, independent_model, extraction_model)
-                        variance_pair = measure_logits(logits)
-                        t3 = time.time()
-                        t_train += (t3 - t2)
-                        pair_list.append(variance_pair)
-            t2 = time.time()
-            classifier_model = train_classifier(pair_list)
-            t3 = time.time()
-            t_train += (t3 - t2)
-            t_total = (t1 - t0) + t_train
-            t_total = round(t_total, 3)
-            time_list.append(t_total)
-            sta0, sta1, sta2, sta3 = batch_unit_test(args, original_graph_data, mask_model, classifier_model, measure_nodes,
-                                                     test_independent_acc_list, test_extraction_acc_list, test_extraction_fide_list, mask_model_save_name)
-            ind_correct_num_list.append(sta0)
-            ind_false_num_list.append(sta1)
-            ext_correct_num_list.append(sta3)
-            ext_false_num_list.append(sta2)
-
-    TP, FN = sum(ind_correct_num_list), sum(ind_false_num_list) # True Positive, False Negative
-    TN, FP = sum(ext_correct_num_list), sum(ext_false_num_list) # True Negative, False Positive
-    print(TP, FN, TN, FP)
+    data = utils.datareader.get_data(args)
+    graph_data = utils.datareader.GraphData(data, args)
+    if args.task_type == 'inductive':
+        target_graph_data, shadow_graph_data, attacker_graph_data, test_graph_data = utils.graph_operator.split_subgraph(graph_data)
+        graph_data = [target_graph_data, shadow_graph_data, attacker_graph_data, test_graph_data]
     
-    accuracy = (TP + TN) / (TP + FN + TN + FP)
-    precision = TP / (TP + FP)
-    recall = TP / (TP + FN)
-    f1_score = (2 * precision * recall) / (precision + recall)
+    with os.scandir(models_folder_path) as itr:
+        for entry in itr:
+            if 'train' in entry.name:
+                continue
 
-    accuracy = round(accuracy, 3)
-    precision = round(precision, 3)
-    recall = round(recall, 3)
-    f1_score = round(f1_score, 3)
-    print('accuracy:', accuracy)
-    print('precision:', precision)
-    print('recall:', recall)
-    print('f1_score:', f1_score)
+            original_model_load_path = os.path.join(models_folder_path, entry.name)
+            double_extraction_model_save_path = os.path.join(double_extraction_models_save_root, entry.name)
+            gnn_model = torch.load(original_model_load_path)
+            
+            arch_and_layers = entry.name.split('_')
+            arch_and_layers[-1] = arch_and_layers[-1].strip('.pt')
+            args.extraction_model = arch_and_layers[1]
+            layers = list()
+            for i in arch_and_layers[2:]:
+                layers.append(int(i))
+            args.extraction_hidden_dim = layers
 
-    get_stats_of_list(original_acc_list, 'original accuracy:')
-    get_stats_of_list(mask_acc_list, 'mask accuracy:')
-    get_stats_of_list(shadow_independent_acc_list, 'shadow independent model accuracy:')
-    get_stats_of_list(shadow_extraction_acc_list, 'shadow extraction model accuracy:')
-    get_stats_of_list(shadow_extraction_fide_list, 'shadow extraction model fidelity:')
-    get_stats_of_list(test_independent_acc_list[0], 'test gcn independent model accuracy:')
-    get_stats_of_list(test_independent_acc_list[1], 'test gat independent model accuracy:')
-    get_stats_of_list(test_independent_acc_list[2], 'test sage independent model accuracy:')
-    get_stats_of_list(test_extraction_acc_list[0], 'test gcn extraction model accuracy:')
-    get_stats_of_list(test_extraction_fide_list[0], 'test gcn extraction model fidelity:')
-    get_stats_of_list(test_extraction_acc_list[1], 'test gat extraction model accuracy:')
-    get_stats_of_list(test_extraction_fide_list[1], 'test gat extraction model fidelity:')
-    get_stats_of_list(test_extraction_acc_list[2], 'test sage extraction model accuracy:')
-    get_stats_of_list(test_extraction_fide_list[2], 'test sage extraction model fidelity:')
-    get_stats_of_list(time_list, 'time consuming:')
+            _, extraction_acc, extraction_fide = extraction.run(args, double_extraction_model_save_path, graph_data, gnn_model, 'test', 'retrain_anyway')
+            print(extraction_acc, extraction_fide)
+
+
+if __name__ == '__main__':
+    args = parse_args()
+    path = '../temp_results/model_states/Citeseer/transductive/extraction_models/mask_by_node/gat_224_256/0.5_0.5/'
+    double_extraction(args, path)
