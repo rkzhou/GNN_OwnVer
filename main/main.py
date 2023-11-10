@@ -41,8 +41,8 @@ def ownver(args):
 
 
 if __name__ == '__main__':
+    from utils.config import parse_args
+    from verification_cfg import multiple_experiments
     args = parse_args()
     # ownver(args)
-    verification.batch_ownver(args)
-    # backdoor.run(args)
-    # grove.batch_ownver(args)
+    multiple_experiments(args)

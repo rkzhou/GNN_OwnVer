@@ -200,8 +200,8 @@ class GNNVerification():
         # save original model
         original_model_save_root = join_path(self.train_save_root, 'original_models')
         original_model_save_path = os.path.join(original_model_save_root,
-                                                "{}_{}.pt".format(args.benign_model, join_name(self.global_cfg["target_hidden_dims"])))
-        return benign.run(args, original_model_save_path)
+                                                "{}_{}.pt".format(self.args.benign_model, join_name(self.global_cfg["target_hidden_dims"])))
+        return benign.run(self.args, original_model_save_path)
 
     def geneate_mask_model(self):
 
@@ -237,25 +237,25 @@ class GNNVerification():
             hidden_dims.append(self.global_cfg["embedding_dim"])
             if mask_model is None:
                 # layer_dim, num_hidden_layers
-                args.benign_hidden_dim = hidden_dims
-                args.benign_model = model_arch
+                self.args.benign_hidden_dim = hidden_dims
+                self.args.benign_model = model_arch
                 # train independent model
                 independent_model_save_root = join_path(model_save_root, 'independent_models')
                 independent_model_save_path = os.path.join(independent_model_save_root,
-                                                           "{}_{}_{}.pt".format(stage, args.benign_model,
+                                                           "{}_{}_{}.pt".format(stage, self.args.benign_model,
                                                                                 join_name(hidden_dims)))
-                _, model, model_acc = benign.run(args, independent_model_save_path, self.original_graph_data)
+                _, model, model_acc = benign.run(self.args, independent_model_save_path, self.original_graph_data)
 
             else:
-                args.extraction_hidden_dim = hidden_dims
-                args.extraction_model = model_arch
-                extraction_model_save_root = join_path(model_save_root, 'extraction_models', args.mask_feat_type,
+                self.args.extraction_hidden_dim = hidden_dims
+                self.args.extraction_model = model_arch
+                extraction_model_save_root = join_path(model_save_root, 'extraction_models', self.args.mask_feat_type,
                                                        mask_model_save_name,
-                                                       "{}_{}".format(args.mask_node_ratio, args.mask_feat_ratio))
+                                                       "{}_{}".format(self.args.mask_node_ratio, self.args.mask_feat_ratio))
                 extraction_model_save_path = os.path.join(extraction_model_save_root,
-                                                          "{}_{}_{}.pt".format(stage, args.extraction_model,
+                                                          "{}_{}_{}.pt".format(stage, self.args.extraction_model,
                                                                                join_name(hidden_dims)))
-                model, model_acc, fidelity = extraction.run(args, extraction_model_save_path,
+                model, model_acc, fidelity = extraction.run(self.args, extraction_model_save_path,
                                                             self.original_graph_data, mask_model, 'test')
                 fidelity_list.append(fidelity)
 
@@ -350,8 +350,8 @@ class GNNVerification():
         save_json["test_surr_acc_list"] = test_surr_acc_list
         save_json["test_surr_fidelity_list"] = test_surr_fidelity_list
 
-        json_save_root = join_path(self.global_cfg["res_path"], args.dataset, args.task_type, self.args.mask_feat_type,
-                                               "{}_{}".format(args.mask_node_ratio, args.mask_feat_ratio))
+        json_save_root = join_path(self.global_cfg["res_path"], self.args.dataset, self.args.task_type, self.args.mask_feat_type,
+                                               "{}_{}".format(self.args.mask_node_ratio, self.args.mask_feat_ratio))
 
         save_json["total_time"] = time.time()-start
         save_json["mask_run_time"] = mask_run_time
@@ -360,9 +360,15 @@ class GNNVerification():
                                                                     self.global_cfg["test_setting"]), "w") as f:
             f.write(json.dumps(save_json))
 
+        with open("{}/train_setting.yaml".format(json_save_root), "w") as f:
+            yaml.dump(self.train_setting_cfg, f, default_flow_style=False)
+        with open("{}/test_setting.yaml".format(json_save_root), "w") as f:
+            yaml.dump(self.test_setting_cfg, f, default_flow_style=False)
+
+
         return TP, FN, TN, FP
 
-def multiple_experiments():
+def multiple_experiments(args):
 
     config_path = "../config"
     with open(os.path.join(config_path, "global_cfg.yaml"), 'r') as file:
@@ -377,6 +383,7 @@ def multiple_experiments():
     with open(os.path.join(config_path,'train_setting{}.yaml'.format(global_cfg["train_setting"])), 'r') as file:
         train_setting_cfg = yaml.safe_load(file)
 
+    # obtain experimental parameters
     grid_params = []
     for dataset in [global_cfg["dataset"]]:
         for test_setting in attack_setting_list:
@@ -386,12 +393,14 @@ def multiple_experiments():
 
 
     for dataset, test_setting, target_arch, target_hidden_dims in grid_params:
+
+        #
         args.dataset = dataset
         global_cfg['test_setting'] = test_setting
         global_cfg['target_model'] = target_arch
         global_cfg['target_hidden_dims'] = target_hidden_dims
 
-        # load setting
+        # load test setting
         with open(os.path.join(config_path, 'test_setting{}.yaml'.format(test_setting)), 'r') as file:
             test_setting_cfg = yaml.safe_load(file)
 
@@ -399,7 +408,4 @@ def multiple_experiments():
         gnn_verification.run_single_experiment()
 
 if __name__ == '__main__':
-    from utils.config import parse_args
-    args = parse_args()
-    # ownver(args)
-    multiple_experiments()
+    pass
