@@ -160,6 +160,7 @@ def train_k_fold(distance_pairs):
         model, val_loss = train_classifier(train_set, test_set)
         if val_loss < min_loss:
             best_model = model
+            min_loss = val_loss
 
     return best_model
 
@@ -424,8 +425,10 @@ def multiple_experiments(args):
 
     # ['dblp', 'citeseer_full', 'pubmed', 'coauthor_phy', 'acm', 'amazon_photo']
     target_arch_list = ["gat", "gcn", "sage"]
+    # target_arch_list = ["gat"]
     target_hidden_dim_list = [[352, 128],[288, 128],[224, 128]]
-    attack_setting_list = [1,3,4]
+    # target_hidden_dim_list = [[224, 128]]
+    attack_setting_list = [2,4]
 
     # load setting
     with open(os.path.join(config_path,'train_setting{}.yaml'.format(global_cfg["train_setting"])), 'r') as file:
