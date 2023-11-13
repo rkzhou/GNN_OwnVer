@@ -255,12 +255,21 @@ class GNNVerification():
 
     def geneate_mask_model(self):
 
+        if self.args.task_type == "inductive":
+            extract_logits_data =  self.original_graph_data[0]
+        else:
+            extract_logits_data = self.original_graph_data
+
         # generate mask model
-        mask_graph_data, mask_nodes = boundary.mask_graph_data(self.args, self.original_graph_data, self.original_model)
+        mask_graph_data, mask_nodes = boundary.mask_graph_data(self.args, extract_logits_data, self.original_model)
         mask_model_save_root = join_path(self.train_save_root, "mask_models", self.args.mask_feat_type,
                                          "{}_{}".format(self.args.mask_node_ratio, self.args.mask_feat_ratio))
 
         mask_model_save_path = os.path.join(mask_model_save_root, "{}.pt".format(self.mask_model_save_name))
+
+        if self.args.task_type == "inductive":
+            mask_graph_data = [mask_graph_data, self.original_graph_data[0], self.original_graph_data[1], self.original_graph_data[2]]
+
         _, mask_model, mask_model_acc = benign.run(self.args, mask_model_save_path, mask_graph_data)
 
         measure_nodes = []
@@ -346,11 +355,15 @@ class GNNVerification():
         train_surr_model_list, train_surr_acc_list, train_surr_fidelity_list = self.train_models_by_setting(self.train_setting_cfg,
                                                                                                  self.train_save_root, self.mask_model_save_name,
                                                                                                             self.mask_model, stage="train", process=self.global_cfg["train_process"])
+        if self.args.task_type == "inductive":
+            extract_logits_data =  self.original_graph_data[0]
+        else:
+            extract_logits_data = self.original_graph_data
 
         # extract
         pair_list = []
         for independent_model, extraction_model in zip(train_inde_model_list, train_surr_model_list):
-            logits = extract_logits(self.original_graph_data, self.measure_nodes, independent_model, extraction_model)
+            logits = extract_logits(extract_logits_data, self.measure_nodes, independent_model, extraction_model)
             variance_pair = measure_logits(logits)
             pair_list.append(variance_pair)
 
@@ -366,8 +379,8 @@ class GNNVerification():
 
         TN, FP, FN, TP = 0, 0, 0, 0
         for test_independent_model, test_extraction_model in zip(test_inde_model_list, test_surr_model_list):
-            ind_pred = owner_verify(self.original_graph_data, test_independent_model, classifier_model, self.measure_nodes)
-            ext_pred = owner_verify(self.original_graph_data, test_extraction_model, classifier_model, self.measure_nodes)
+            ind_pred = owner_verify(extract_logits_data, test_independent_model, classifier_model, self.measure_nodes)
+            ext_pred = owner_verify(extract_logits_data, test_extraction_model, classifier_model, self.measure_nodes)
 
             if ind_pred == 0:
                 TN += 1

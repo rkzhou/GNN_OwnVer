@@ -113,6 +113,8 @@ def inductive_train(args, model_save_path, graph_data):
     else:
         target_graph_data, shadow_graph_data, attacker_graph_data, test_graph_data = graph_data
 
+    loss_fn = torch.nn.CrossEntropyLoss()
+    predict_fn = lambda output: output.max(1, keepdim=True)[1]
     path = Path(model_save_path)
     if path.is_file():
         gnn_model = torch.load(model_save_path)
@@ -130,8 +132,7 @@ def inductive_train(args, model_save_path, graph_data):
 
         gnn_model.to(device)
 
-        loss_fn = torch.nn.CrossEntropyLoss()
-        predict_fn = lambda output: output.max(1, keepdim=True)[1]
+
         optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr)
 
         last_train_acc = 0.0
