@@ -271,7 +271,7 @@ class GNNVerification():
 
     # all model generate by this function will automaticly add a final layer for grove
     def train_models_by_arch(self, setting_cfg, model_arch, model_save_root, seed,
-                             mask_model_save_name=None, mask_model=None, stage="train"):
+                             mask_model_save_name=None, mask_model=None, stage="train", process="train"):
 
         hidden_dims_generator = random_generate_arch(setting_cfg["layer_dims"], setting_cfg["num_hidden_layers"],
                                                      seed=seed)
@@ -306,7 +306,7 @@ class GNNVerification():
                                                           "{}_{}_{}.pt".format(stage, self.args.extraction_model,
                                                                                join_name(hidden_dims)))
                 model, model_acc, fidelity = extraction.run(self.args, extraction_model_save_path,
-                                                            self.original_graph_data, mask_model, 'test')
+                                                            self.original_graph_data, mask_model, process)
                 fidelity_list.append(fidelity)
 
             model_list.append(model)
@@ -314,11 +314,11 @@ class GNNVerification():
 
         return model_list, acc_list, fidelity_list
     # This function train all models accroding to setting config
-    def train_models_by_setting(self, setting_cfg,  model_save_root, mask_model_save_name=None, mask_model=None, stage="train"):
+    def train_models_by_setting(self, setting_cfg,  model_save_root, mask_model_save_name=None, mask_model=None, stage="train", process="train"):
         all_model_list, all_acc_list, all_fidelity_list = [], [], []
         for seed, model_arch in enumerate(setting_cfg["model_arches"]):
             model_list, acc_list, fidelity_list = self.train_models_by_arch(setting_cfg, model_arch, model_save_root, seed, mask_model_save_name,
-                                                                       mask_model=mask_model, stage=stage)
+                                                                       mask_model=mask_model, stage=stage, process=process)
             all_model_list += model_list
             all_acc_list.append(acc_list)
 
@@ -345,7 +345,7 @@ class GNNVerification():
         # train surrogate model
         train_surr_model_list, train_surr_acc_list, train_surr_fidelity_list = self.train_models_by_setting(self.train_setting_cfg,
                                                                                                  self.train_save_root, self.mask_model_save_name,
-                                                                                                            self.mask_model, stage="train")
+                                                                                                            self.mask_model, stage="train", process=self.global_cfg["train_process"])
 
         # extract
         pair_list = []
@@ -362,7 +362,7 @@ class GNNVerification():
         # train surrogate model
         test_surr_model_list, test_surr_acc_list, test_surr_fidelity_list = self.train_models_by_setting(
                                                                     self.test_setting_cfg, self.test_save_root,
-                                                                    self.mask_model_save_name, self.mask_model, stage="test")
+                                                                    self.mask_model_save_name, self.mask_model, stage="test", process=self.global_cfg["test_process"])
 
         TN, FP, FN, TP = 0, 0, 0, 0
         for test_independent_model, test_extraction_model in zip(test_inde_model_list, test_surr_model_list):
@@ -428,7 +428,7 @@ def multiple_experiments(args):
     # target_arch_list = ["gat"]
     target_hidden_dim_list = [[352, 128],[288, 128],[224, 128]]
     # target_hidden_dim_list = [[224, 128]]
-    attack_setting_list = [2,4]
+    attack_setting_list = [1,2,3,4]
 
     # load setting
     with open(os.path.join(config_path,'train_setting{}.yaml'.format(global_cfg["train_setting"])), 'r') as file:

@@ -52,6 +52,24 @@ class GraphData(torch.utils.data.Dataset):
         each_class_nodes_index = [list() for _ in range(self.class_num)]
         for i in range(self.node_num):
             each_class_nodes_index[self.labels[i]].append(i)
+        
+        # node_index = [i for i in range(self.node_num)]
+        # random.seed(args.dataset_random_seed)
+        # random.shuffle(node_index)
+        # target_nodes_size = math.floor(self.node_num * args.split_dataset_ratio[0])
+        # shadow_nodes_size = math.floor(self.node_num * args.split_dataset_ratio[1])
+        # attacker_nodes_size = math.floor(self.node_num * args.split_dataset_ratio[2])
+        # test_nodes_size = self.node_num - target_nodes_size - shadow_nodes_size - attacker_nodes_size
+        # self.target_nodes_index += node_index[:target_nodes_size]
+        # self.shadow_nodes_index += node_index[target_nodes_size:(target_nodes_size + shadow_nodes_size)]
+        # self.attacker_nodes_index += node_index[(target_nodes_size + shadow_nodes_size):(target_nodes_size + shadow_nodes_size + attacker_nodes_size)]
+        # self.test_nodes_index += node_index[(target_nodes_size + shadow_nodes_size + attacker_nodes_size):]
+
+        # self.target_nodes_index.sort()
+        # self.shadow_nodes_index.sort()
+        # self.attacker_nodes_index.sort()
+        # self.test_nodes_index.sort()
+        
         for i in range(self.class_num):
             random.seed(args.dataset_random_seed)
             random.shuffle(each_class_nodes_index[i])

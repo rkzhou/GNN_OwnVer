@@ -4,6 +4,8 @@ dataset: Citeseer
 train_setting: 1
 test_setting: 1
 embedding_dim: 128
+train_process: "train"
+test_process: "test"
 
 train_save_root: ../temp_results/model_states/
 test_save_root: ../temp_results/model_states/
