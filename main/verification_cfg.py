@@ -19,7 +19,7 @@ import yaml
 import itertools
 from datetime import timedelta
 
-def extract_logits(graph_data, specific_nodes, independent_model, surrogate_model):
+def extract_logits(graph_data, specific_nodes, independent_model, surrogate_model, target_model):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -27,18 +27,24 @@ def extract_logits(graph_data, specific_nodes, independent_model, surrogate_mode
     
     independent_model.eval()
     surrogate_model.eval()
+    target_model.eval()
     
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
     _, independent_output = independent_model(input_data)
     _, surrogate_output = surrogate_model(input_data)
+    _, target_output = target_model(input_data)
 
     softmax = torch.nn.Softmax(dim=1)
     independent_logits = softmax(independent_output)
     surrogate_logits = softmax(surrogate_output)
+    target_logits = softmax(target_output)
 
     if specific_nodes != None:
         independent_logits = independent_logits[specific_nodes].detach()
         surrogate_logits = surrogate_logits[specific_nodes].detach()
+        target_logits = target_logits[specific_nodes].detach()
+        independent_logits = independent_logits - target_logits
+        surrogate_logits = surrogate_logits - target_logits
     
     logits = {'independent': independent_logits, 'surrogate': surrogate_logits}
     
@@ -49,14 +55,14 @@ def measure_logits(logits):
     independent_logits = logits['independent']
     surrogate_logits = logits['surrogate']
     
-    independent_var = torch.var(independent_logits, axis=1)
-    surrogate_var = torch.var(surrogate_logits, axis=1)
+    #independent_var = torch.var(independent_logits, axis=1)
+    #surrogate_var = torch.var(surrogate_logits, axis=1)
 
-    independent_var = torch.sort(independent_var).values
+    #independent_var = torch.sort(independent_var).values
     # independent_var = torch.cat([independent_var.values[:100], independent_var.indices[:100]])
-    surrogate_var = torch.sort(surrogate_var).values
+    #surrogate_var = torch.sort(surrogate_var).values
     # surrogate_var = torch.cat([surrogate_var.values[:100], surrogate_var.indices[:100]])
-    distance_pair = {'label_0': independent_var, 'label_1': surrogate_var}
+    distance_pair = {'label_0': independent_logits, 'label_1': surrogate_logits}
     
     return distance_pair
 
@@ -227,7 +233,7 @@ def train_original_classifier(distance_pairs: list):
             break
     print("best acc:{}".format(best_acc))
     return model
-def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes):
+def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes, target_model):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -235,21 +241,27 @@ def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes):
     
     suspicious_model.to(device)
     suspicious_model.eval()
+    target_model.to(device)
+    target_model.eval()
     
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
     _, suspicious_output = suspicious_model(input_data)
+    _, target_output = target_model(input_data)
 
     softmax = torch.nn.Softmax(dim=1)
     suspicious_logits = softmax(suspicious_output)
+    target_logits = softmax(target_output)
 
     if measure_nodes != None:
         suspicious_logits = suspicious_logits[measure_nodes].detach()
+        target_logits = target_logits[measure_nodes].detach()
+        suspicious_logits = suspicious_logits - target_logits
 
-    suspicious_var = torch.var(suspicious_logits, axis=1)
+    #suspicious_var = torch.var(suspicious_logits, axis=1)
 
-    suspicious_var = torch.sort(suspicious_var).values
+    #suspicious_var = torch.sort(suspicious_var).values
     # suspicious_var = torch.cat([suspicious_var.values[:100], suspicious_var.indices[:100]])
-    distance = suspicious_var
+    distance = suspicious_logits
     distance = torch.flatten(distance).view(1, -1)
 
     verifier_model.to(device)
@@ -431,7 +443,7 @@ class GNNVerification():
         # TODO
         pair_list = []
         for independent_model, extraction_model in zip(train_inde_model_list, train_surr_model_list):
-            logits = extract_logits(extract_logits_data, self.measure_nodes, independent_model, extraction_model)
+            logits = extract_logits(extract_logits_data, self.measure_nodes, independent_model, extraction_model, self.mask_model)
             variance_pair = measure_logits(logits)
             pair_list.append(variance_pair)
 
@@ -448,8 +460,8 @@ class GNNVerification():
 
         TN, FP, FN, TP = 0, 0, 0, 0
         for test_independent_model, test_extraction_model in zip(test_inde_model_list, test_surr_model_list):
-            ind_pred = owner_verify(extract_logits_data, test_independent_model, classifier_model, self.measure_nodes)
-            ext_pred = owner_verify(extract_logits_data, test_extraction_model, classifier_model, self.measure_nodes)
+            ind_pred = owner_verify(extract_logits_data, test_independent_model, classifier_model, self.measure_nodes, self.mask_model)
+            ext_pred = owner_verify(extract_logits_data, test_extraction_model, classifier_model, self.measure_nodes, self.mask_model)
 
             if ind_pred == 0:
                 TN += 1
