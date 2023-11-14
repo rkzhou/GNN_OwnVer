@@ -108,7 +108,7 @@ def train_classifier(train_distance_pairs, val_distance_pairs):
     epoch_num = 1000
 
     model.to(device)
-    early_stopper = EarlyStopper(patience=5, min_delta=0.00001)
+    # early_stopper = EarlyStopper(patience=5, min_delta=0.00001)
     for epoch_index in range(epoch_num):
         model.train()
         for _, (inputs, labels) in enumerate(train_loader):
@@ -122,19 +122,20 @@ def train_classifier(train_distance_pairs, val_distance_pairs):
 
         model.eval()
         validation_loss = []
+        correct = 0
         for _, (inputs, labels) in enumerate(val_loader):
             inputs = inputs.to(device)
             labels = labels.to(device)
             outputs = model(inputs)
             val_loss = loss_fn(outputs, labels)
             validation_loss.append(val_loss.item())
+            _, predictions = torch.max(outputs.data, 1)
+            correct += (predictions == labels).sum().item()
 
-        if early_stopper.early_stop(mean(validation_loss)):
+        val_acc = correct / len(val_loader.dataset) * 100
+        if val_acc == 100:
             break
-
-            # if val_acc == 100:
-            #     break
-    return model, early_stopper.min_validation_loss
+    return model, val_acc
 
 def k_fold_split(data, k=5):
     """将数据分割为k个部分，并迭代地返回训练集和测试集"""
@@ -153,18 +154,75 @@ def k_fold_split(data, k=5):
 def train_k_fold(distance_pairs):
     random.shuffle(distance_pairs)
 
-    min_loss = 100
+    max_acc = 0
     best_model = None
-    for fold, (train_set, test_set) in enumerate(k_fold_split(distance_pairs, 5)):
+    for fold, (train_set, test_set) in enumerate(k_fold_split(distance_pairs, 10)):
 
-        model, val_loss = train_classifier(train_set, test_set)
-        if val_loss < min_loss:
+        model, val_acc = train_classifier(train_set, test_set)
+        if val_acc > max_acc:
             best_model = model
-            min_loss = val_loss
+            max_acc = val_acc
 
     return best_model
 
 
+def train_original_classifier(distance_pairs: list):
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+
+    processed_data = preprocess_data_flatten(distance_pairs)
+    dataset = utils.datareader.VarianceData(processed_data['label0'], processed_data['label1'])
+
+    hidden_layers = [128, 64]
+    model = mlp_nn(dataset.data.shape[1], hidden_layers)
+    loss_fn = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    epoch_num = 1000
+
+    best_model, best_acc = None, 0
+    for i in range(10):
+        dataloader = DataLoader(dataset, batch_size=10, shuffle=True)
+
+        model.to(device)
+        acc = 0
+        for epoch_index in range(epoch_num):
+            model.train()
+            for _, (inputs, labels) in enumerate(dataloader):
+                optimizer.zero_grad()
+                inputs = inputs.to(device)
+                labels = labels.to(device)
+                outputs = model(inputs)
+                loss = loss_fn(outputs, labels)
+                loss.backward()
+                optimizer.step()
+
+            if (epoch_index + 1) % 100 == 0:
+                model.eval()
+                correct = 0
+                for _, (inputs, labels) in enumerate(dataloader):
+                    inputs = inputs.to(device)
+                    labels = labels.to(device)
+                    outputs = model(inputs)
+                    _, predictions = torch.max(outputs.data, 1)
+                    correct += (predictions == labels).sum().item()
+
+                acc = correct / len(dataset) * 100
+
+
+                if acc == 100:
+                    break
+
+
+        if acc > best_acc:
+            best_model = model
+            best_acc = acc
+
+        if best_acc == 100:
+            break
+    print("best acc:{}".format(best_acc))
+    return model
 def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes):
     if torch.cuda.is_available():
         device = torch.device('cuda')
@@ -367,7 +425,8 @@ class GNNVerification():
             variance_pair = measure_logits(logits)
             pair_list.append(variance_pair)
 
-        classifier_model = train_k_fold(pair_list)
+        classifier_model = train_original_classifier(pair_list)
+        # classifier_model = train_k_fold(pair_list)
 
         # train independent  model
         test_inde_model_list, test_inde_acc_list, _ = self.train_models_by_setting(self.test_setting_cfg,  self.test_save_root,
@@ -460,6 +519,8 @@ def multiple_experiments(args):
 
         #
         args.dataset = dataset
+        args.benign_hidden_dim = target_hidden_dims
+        args.benign_model = target_arch
         global_cfg['test_setting'] = test_setting
         global_cfg['target_model'] = target_arch
         global_cfg['target_hidden_dims'] = target_hidden_dims
