@@ -51,7 +51,11 @@ def measure_logits(logits):
     
     independent_var = torch.var(independent_logits, axis=1)
     surrogate_var = torch.var(surrogate_logits, axis=1)
-    
+
+    independent_var = torch.sort(independent_var).values
+    # independent_var = torch.cat([independent_var.values[:100], independent_var.indices[:100]])
+    surrogate_var = torch.sort(surrogate_var).values
+    # surrogate_var = torch.cat([surrogate_var.values[:100], surrogate_var.indices[:100]])
     distance_pair = {'label_0': independent_var, 'label_1': surrogate_var}
     
     return distance_pair
@@ -242,6 +246,9 @@ def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes):
         suspicious_logits = suspicious_logits[measure_nodes].detach()
 
     suspicious_var = torch.var(suspicious_logits, axis=1)
+
+    suspicious_var = torch.sort(suspicious_var).values
+    # suspicious_var = torch.cat([suspicious_var.values[:100], suspicious_var.indices[:100]])
     distance = suspicious_var
     distance = torch.flatten(distance).view(1, -1)
 
@@ -287,7 +294,6 @@ def random_generate_arch(layer_dims, num_hidden_layers, seed):
         for j in range(len(num_hidden_layers)):
             if i < len(all_hidden_dims[j]):
                 res.append(all_hidden_dims[j][i])
-
     return res
 
 
@@ -400,11 +406,19 @@ class GNNVerification():
         start = time.time()
         # train original model
         self.original_graph_data, self.original_model, self.original_model_acc = self.train_original_model()
+        if self.args.task_type == "inductive":
+            extract_logits_data =  self.original_graph_data[0]
+        else:
+            extract_logits_data = self.original_graph_data
 
         # generate mask model
         mask_start = time.time()
         self.mask_model, self.mask_model_acc, self.measure_nodes = self.geneate_mask_model()
         mask_run_time = time.time() - mask_start
+
+        #logits = extract_logits(extract_logits_data, self.measure_nodes, self.mask_model, self.mask_model)
+        #variance_pair = measure_logits(logits)
+
 
         # train independent model
         train_inde_model_list, train_inde_acc_list, _ = self.train_models_by_setting(self.train_setting_cfg, self.train_save_root,
@@ -413,12 +427,8 @@ class GNNVerification():
         train_surr_model_list, train_surr_acc_list, train_surr_fidelity_list = self.train_models_by_setting(self.train_setting_cfg,
                                                                                                  self.train_save_root, self.mask_model_save_name,
                                                                                                             self.mask_model, stage="train", process=self.global_cfg["train_process"])
-        if self.args.task_type == "inductive":
-            extract_logits_data =  self.original_graph_data[0]
-        else:
-            extract_logits_data = self.original_graph_data
 
-        # extract
+        # TODO
         pair_list = []
         for independent_model, extraction_model in zip(train_inde_model_list, train_surr_model_list):
             logits = extract_logits(extract_logits_data, self.measure_nodes, independent_model, extraction_model)
@@ -500,7 +510,7 @@ def multiple_experiments(args):
     # target_arch_list = ["gat"]
     target_hidden_dim_list = [[352, 128],[288, 128],[224, 128]]
     # target_hidden_dim_list = [[224, 128]]
-    attack_setting_list = [1,2,3,4]
+    attack_setting_list = [3,4]
 
     # load setting
     with open(os.path.join(config_path,'train_setting{}.yaml'.format(global_cfg["train_setting"])), 'r') as file:

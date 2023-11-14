@@ -7,10 +7,11 @@ def add_data_group(group):
     group.add_argument('--dataset_random_seed', type=int, default=999)
     group.add_argument('--feature_random_seed', type=int, default=999)
     group.add_argument('--split_dataset_ratio', type=list, default=[0.3, 0.3, 0.3, 0.1])
-    group.add_argument('--mask_node_ratio', type=float, default=0.5)
-    group.add_argument('--mask_feat_ratio', type=float, default=0.5)
+    group.add_argument('--mask_node_ratio', type=float, default=1.)
+    group.add_argument('--mask_feat_ratio', type=float, default=0.05)
     group.add_argument('--mask_node_type', type=str, default='each_class')
-    group.add_argument('--mask_feat_type', type=str, default='random_mask')
+    group.add_argument('--mask_feat_type', type=str, default='mask_by_dataset')
+    group.add_argument('--mask_method', type=str, default='flip')
     group.add_argument('--prune_weight_ratio', type=float, default=0.1)
 
 def add_benign_model_group(group):

@@ -50,13 +50,21 @@ def mask_graph_data(args, graph_data, model):
                     mask_features.update({node_index:feat_importances[node_index][:mask_feat_num]})
         else:
             raise ValueError('Invalid mask method')
-        
+
+        # torch.random.seed(args.feature_random_seed)
+        # torch.randint(0, 1, size=mask_feat_num)
         # flip the selected features of chosen nodes
         if args.mask_feat_type == 'random_mask' or args.mask_feat_type == 'mask_by_dataset':
             for node_class in mask_nodes:
                 for node_index in node_class:
                     for i in range(mask_feat_num):
-                        new_graph_data.features[node_index][mask_features[i]] = (new_graph_data.features[node_index][mask_features[i]] + 1) % 2
+                        if args.mask_method == "flip":
+                            new_graph_data.features[node_index][mask_features[i]] = (new_graph_data.features[node_index][mask_features[i]] + 1) % 2
+                        elif  args.mask_method == "fix":
+                            new_graph_data.features[node_index][mask_features[i]] = 0
+                        # elif  args.mask_method == "random":
+                        #     new_graph_data.features[node_index][mask_features[i]] =
+
         elif args.mask_feat_type == 'mask_by_node':
             for node_index, feat_list in mask_features.items():
                 for feat_index in feat_list:
@@ -179,13 +187,14 @@ def find_mask_features_overall(args, graph_data, feat_num):
         X = graph_data.features.numpy()
         Y = graph_data.labels.numpy()
 
-    dt_model = RandomForestClassifier()
+    dt_model = RandomForestClassifier(random_state=args.feature_random_seed)
     dt_model.fit(X, Y)
     feat_importance = dt_model.feature_importances_
 
     importance_dict = dict()
     for index, value in enumerate(feat_importance):
         importance_dict.update({index: value})
+    # TODO
     importance_dict = dict(sorted(importance_dict.items(), key=lambda x:x[1], reverse=True))
     topk_features = list(importance_dict.keys())[:feat_num]
 
@@ -232,5 +241,4 @@ def find_mask_features_individual(args, graph_data, gnn_model):
             feat_var_diff.update({feat_index:var_diff})
         feat_var_diff = dict(sorted(feat_var_diff.items(), key=lambda x:x[1], reverse=True))
         node_feat_importance.update({node_index:list(feat_var_diff.keys())})
-    
     return node_feat_importance
