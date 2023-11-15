@@ -195,7 +195,7 @@ def find_mask_features_overall(args, graph_data, feat_num):
     for index, value in enumerate(feat_importance):
         importance_dict.update({index: value})
     # TODO
-    importance_dict = dict(sorted(importance_dict.items(), key=lambda x:x[1], reverse=True))
+    importance_dict = dict(sorted(importance_dict.items(), key=lambda x:x[1], reverse=False))
     topk_features = list(importance_dict.keys())[:feat_num]
 
     return topk_features

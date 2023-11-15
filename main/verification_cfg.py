@@ -42,9 +42,11 @@ def extract_logits(graph_data, specific_nodes, independent_model, surrogate_mode
     if specific_nodes != None:
         independent_logits = independent_logits[specific_nodes].detach()
         surrogate_logits = surrogate_logits[specific_nodes].detach()
+        # independent_logits = torch.var(independent_logits, dim=1).sort().values
+        # surrogate_logits = torch.var(surrogate_logits, dim=1).sort().values
         target_logits = target_logits[specific_nodes].detach()
-        independent_logits = independent_logits - target_logits
-        surrogate_logits = surrogate_logits - target_logits
+        independent_logits = torch.norm(independent_logits - target_logits, p=1, dim=1)
+        surrogate_logits = torch.norm(surrogate_logits - target_logits, p=1, dim=1)
     
     logits = {'independent': independent_logits, 'surrogate': surrogate_logits}
     
@@ -243,19 +245,9 @@ def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes, ta
     suspicious_model.eval()
     target_model.to(device)
     target_model.eval()
-    
-    input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-    _, suspicious_output = suspicious_model(input_data)
-    _, target_output = target_model(input_data)
-
-    softmax = torch.nn.Softmax(dim=1)
-    suspicious_logits = softmax(suspicious_output)
-    target_logits = softmax(target_output)
 
     if measure_nodes != None:
-        suspicious_logits = suspicious_logits[measure_nodes].detach()
-        target_logits = target_logits[measure_nodes].detach()
-        suspicious_logits = suspicious_logits - target_logits
+        suspicious_logits =  extract_logits(graph_data,  measure_nodes, suspicious_model, suspicious_model, target_model)["independent"]
 
     #suspicious_var = torch.var(suspicious_logits, axis=1)
 
@@ -428,10 +420,6 @@ class GNNVerification():
         self.mask_model, self.mask_model_acc, self.measure_nodes = self.geneate_mask_model()
         mask_run_time = time.time() - mask_start
 
-        #logits = extract_logits(extract_logits_data, self.measure_nodes, self.mask_model, self.mask_model)
-        #variance_pair = measure_logits(logits)
-
-
         # train independent model
         train_inde_model_list, train_inde_acc_list, _ = self.train_models_by_setting(self.train_setting_cfg, self.train_save_root,
                                                                           mask_model=None, stage="train")
@@ -443,7 +431,7 @@ class GNNVerification():
         # TODO
         pair_list = []
         for independent_model, extraction_model in zip(train_inde_model_list, train_surr_model_list):
-            logits = extract_logits(extract_logits_data, self.measure_nodes, independent_model, extraction_model, self.mask_model)
+            logits = extract_logits(extract_logits_data, self.original_graph_data.test_nodes_index, independent_model, extraction_model, self.mask_model)
             variance_pair = measure_logits(logits)
             pair_list.append(variance_pair)
 
@@ -460,8 +448,8 @@ class GNNVerification():
 
         TN, FP, FN, TP = 0, 0, 0, 0
         for test_independent_model, test_extraction_model in zip(test_inde_model_list, test_surr_model_list):
-            ind_pred = owner_verify(extract_logits_data, test_independent_model, classifier_model, self.measure_nodes, self.mask_model)
-            ext_pred = owner_verify(extract_logits_data, test_extraction_model, classifier_model, self.measure_nodes, self.mask_model)
+            ind_pred = owner_verify(extract_logits_data, test_independent_model, classifier_model, self.original_graph_data.test_nodes_index, self.mask_model)
+            ext_pred = owner_verify(extract_logits_data, test_extraction_model, classifier_model, self.original_graph_data.test_nodes_index, self.mask_model)
 
             if ind_pred == 0:
                 TN += 1
@@ -522,7 +510,7 @@ def multiple_experiments(args):
     # target_arch_list = ["gat"]
     target_hidden_dim_list = [[352, 128],[288, 128],[224, 128]]
     # target_hidden_dim_list = [[224, 128]]
-    attack_setting_list = [3,4]
+    attack_setting_list = [1,2,3,4]
 
     # load setting
     with open(os.path.join(config_path,'train_setting{}.yaml'.format(global_cfg["train_setting"])), 'r') as file:
