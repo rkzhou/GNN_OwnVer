@@ -149,7 +149,7 @@ def find_mask_nodes(args, graph_data, model):
 
         new_node_possibilities = list()
         for class_node_possibility in node_possibilities:
-            class_node_possibility = dict(sorted(class_node_possibility.items(), key=lambda x:x[1], reverse=True))
+            class_node_possibility = dict(sorted(class_node_possibility.items(), key=lambda x:x[1], reverse=False))
             new_node_possibilities.append(class_node_possibility)
     
         topk_nodes = list()
@@ -194,8 +194,8 @@ def find_mask_features_overall(args, graph_data, feat_num):
     importance_dict = dict()
     for index, value in enumerate(feat_importance):
         importance_dict.update({index: value})
-    # TODO
-    importance_dict = dict(sorted(importance_dict.items(), key=lambda x:x[1], reverse=False))
+    
+    importance_dict = dict(sorted(importance_dict.items(), key=lambda x:x[1], reverse=True))
     topk_features = list(importance_dict.keys())[:feat_num]
 
     return topk_features

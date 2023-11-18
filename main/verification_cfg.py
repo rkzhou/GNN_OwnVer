@@ -39,14 +39,22 @@ def extract_logits(graph_data, specific_nodes, independent_model, surrogate_mode
     surrogate_logits = softmax(surrogate_output)
     target_logits = softmax(target_output)
 
+    predict_fn = lambda output: output.max(1, keepdim=True)[1]
+    independent_predictions = predict_fn(independent_logits)
+    surrogate_predictions = predict_fn(surrogate_logits)
+
     if specific_nodes != None:
         independent_logits = independent_logits[specific_nodes].detach()
         surrogate_logits = surrogate_logits[specific_nodes].detach()
-        # independent_logits = torch.var(independent_logits, dim=1).sort().values
-        # surrogate_logits = torch.var(surrogate_logits, dim=1).sort().values
-        target_logits = target_logits[specific_nodes].detach()
-        independent_logits = torch.norm(independent_logits - target_logits, p=1, dim=1)
-        surrogate_logits = torch.norm(surrogate_logits - target_logits, p=1, dim=1)
+        independent_predictions = torch.flatten(independent_predictions[specific_nodes].detach()).view(-1, 1)
+        surrogate_predictions = torch.flatten(surrogate_predictions[specific_nodes].detach()).view(-1, 1)
+
+
+        independent_logits = torch.cat((independent_logits, independent_predictions), 1)
+        surrogate_logits = torch.cat((surrogate_logits, surrogate_predictions), 1)
+        # target_logits = target_logits[specific_nodes].detach()
+        # independent_logits = torch.abs(independent_logits - target_logits)
+        # surrogate_logits = torch.abs(surrogate_logits - target_logits)
     
     logits = {'independent': independent_logits, 'surrogate': surrogate_logits}
     
@@ -431,7 +439,7 @@ class GNNVerification():
         # TODO
         pair_list = []
         for independent_model, extraction_model in zip(train_inde_model_list, train_surr_model_list):
-            logits = extract_logits(extract_logits_data, self.original_graph_data.test_nodes_index, independent_model, extraction_model, self.mask_model)
+            logits = extract_logits(extract_logits_data, self.measure_nodes, independent_model, extraction_model, self.mask_model)
             variance_pair = measure_logits(logits)
             pair_list.append(variance_pair)
 
@@ -448,8 +456,8 @@ class GNNVerification():
 
         TN, FP, FN, TP = 0, 0, 0, 0
         for test_independent_model, test_extraction_model in zip(test_inde_model_list, test_surr_model_list):
-            ind_pred = owner_verify(extract_logits_data, test_independent_model, classifier_model, self.original_graph_data.test_nodes_index, self.mask_model)
-            ext_pred = owner_verify(extract_logits_data, test_extraction_model, classifier_model, self.original_graph_data.test_nodes_index, self.mask_model)
+            ind_pred = owner_verify(extract_logits_data, test_independent_model, classifier_model, self.measure_nodes, self.mask_model)
+            ext_pred = owner_verify(extract_logits_data, test_extraction_model, classifier_model, self.measure_nodes, self.mask_model)
 
             if ind_pred == 0:
                 TN += 1
@@ -510,7 +518,7 @@ def multiple_experiments(args):
     # target_arch_list = ["gat"]
     target_hidden_dim_list = [[352, 128],[288, 128],[224, 128]]
     # target_hidden_dim_list = [[224, 128]]
-    attack_setting_list = [1,2,3,4]
+    attack_setting_list = [1,2]
 
     # load setting
     with open(os.path.join(config_path,'train_setting{}.yaml'.format(global_cfg["train_setting"])), 'r') as file:
