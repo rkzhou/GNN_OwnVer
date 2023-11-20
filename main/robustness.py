@@ -9,22 +9,34 @@ import utils.datareader
 import utils.graph_operator
 import extraction
 
-def fine_tune(args, models_folder_path):
+def fine_tune(args, load_root):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
     
-    substring_path = models_folder_path.split('/')
+    substring_path = load_root.split('/')
     substring_path.remove('..')
     substring_path.remove('')
     substring_path.remove('temp_results')
 
-    fine_tune_models_save_root = '../robustness_results/fine_tune'
+    load_folder_root, save_folder_root = list(), list()
+    save_root = '../robustness_results/fine_tune'
     for i in substring_path:
-        fine_tune_models_save_root = os.path.join(fine_tune_models_save_root, i)
-    if not os.path.exists(fine_tune_models_save_root):
-        os.makedirs(fine_tune_models_save_root)
+        save_root = os.path.join(save_root, i)
+    with os.scandir(load_root) as itr_0:
+        for target_model_folder in itr_0:
+            sub_load_root = os.path.join(load_root, target_model_folder.name)
+            sub_save_root = os.path.join(save_root, target_model_folder.name)
+            with os.scandir(sub_load_root) as itr_1:
+                for mask_mag in itr_1:
+                    final_load_root = os.path.join(sub_load_root, mask_mag.name)
+                    final_save_root = os.path.join(sub_save_root, mask_mag.name)
+                    load_folder_root.append(final_load_root)
+                    save_folder_root.append(final_save_root)
+
+                    if not os.path.exists(final_save_root):
+                        os.makedirs(final_save_root)
     
     data = utils.datareader.get_data(args)
     graph_data = utils.datareader.GraphData(data, args)
@@ -33,159 +45,192 @@ def fine_tune(args, models_folder_path):
     loss_fn = torch.nn.CrossEntropyLoss()
     predict_fn = lambda output: output.max(1, keepdim=True)[1]
 
-    with os.scandir(models_folder_path) as itr:
-        for entry in itr:
-            if 'train' in entry.name:
-                continue
+    for folder_index in range(len(load_folder_root)):
+        models_folder_path = load_folder_root[folder_index]
+        with os.scandir(models_folder_path) as itr:
+            for entry in itr:
+                if 'train' in entry.name:
+                    continue
 
-            original_model_load_path = os.path.join(models_folder_path, entry.name)
-            fine_tune_model_save_path = os.path.join(fine_tune_models_save_root, entry.name)
-            gnn_model = torch.load(original_model_load_path)
-            gnn_model.to(device)
-            gnn_model.train()
-            optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr)
+                original_model_load_path = os.path.join(models_folder_path, entry.name)
+                fine_tune_model_save_path = os.path.join(save_folder_root[folder_index], entry.name)
 
-            # use testing dataset to fine-tune extraction models
-            last_train_acc = 0.0
-            if args.task_type == 'transductive':
-                for epoch in range(args.benign_train_epochs):
-                    optimizer.zero_grad()
-                    input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-                    labels = graph_data.labels.to(device)
-                    _, output = gnn_model(input_data)
-                    loss = loss_fn(output[graph_data.test_nodes_index], labels[graph_data.test_nodes_index])
-                    loss.backward()
-                    optimizer.step()
+                gnn_model = torch.load(original_model_load_path)
+                gnn_model.to(device)
+                gnn_model.train()
+                optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr)
 
-                    train_correct_num = 0
-                    if (epoch + 1) % 100 == 0:
+                # use testing dataset to fine-tune extraction models
+                last_train_acc = 0.0
+                if args.task_type == 'transductive':
+                    for epoch in range(args.benign_train_epochs):
+                        optimizer.zero_grad()
+                        input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
+                        labels = graph_data.labels.to(device)
                         _, output = gnn_model(input_data)
-                        pred = predict_fn(output)
-                        train_pred = pred[graph_data.test_nodes_index]
-                        train_labels = graph_data.labels[graph_data.test_nodes_index]
-                        for i in range(train_pred.shape[0]):
-                            if train_pred[i, 0] == train_labels[i]:
-                                train_correct_num += 1
-                        train_acc = train_correct_num / train_pred.shape[0] * 100
-                        if last_train_acc == 0.0:
-                            last_train_acc = train_acc
-                        else:
-                            train_acc_diff = (train_acc - last_train_acc) / last_train_acc * 100
-                            if train_acc_diff <= 0.5: #0.5%
-                                break
-                            else:
-                                last_train_acc = train_acc
-            elif args.task_type == 'inductive':
-                for epoch in range(args.benign_train_epochs):
-                    optimizer.zero_grad()
-                    input_data = test_graph_data.features.to(device), test_graph_data.adjacency.to(device)
-                    labels = test_graph_data.labels.to(device)
-                    _, output = gnn_model(input_data)
-                    loss = loss_fn(output, labels)
-                    loss.backward()
-                    optimizer.step()
+                        loss = loss_fn(output[graph_data.test_nodes_index], labels[graph_data.test_nodes_index])
+                        loss.backward()
+                        optimizer.step()
 
-                    train_correct_num = 0
-                    if (epoch + 1) % 100 == 0:
+                        train_correct_num = 0
+                        if (epoch + 1) % 100 == 0:
+                            _, output = gnn_model(input_data)
+                            pred = predict_fn(output)
+                            train_pred = pred[graph_data.test_nodes_index]
+                            train_labels = graph_data.labels[graph_data.test_nodes_index]
+                            for i in range(train_pred.shape[0]):
+                                if train_pred[i, 0] == train_labels[i]:
+                                    train_correct_num += 1
+                            train_acc = train_correct_num / train_pred.shape[0] * 100
+                            if last_train_acc == 0.0:
+                                last_train_acc = train_acc
+                            else:
+                                train_acc_diff = (train_acc - last_train_acc) / last_train_acc * 100
+                                if train_acc_diff <= 0.5: #0.5%
+                                    break
+                                else:
+                                    last_train_acc = train_acc
+                elif args.task_type == 'inductive':
+                    for epoch in range(args.benign_train_epochs):
+                        optimizer.zero_grad()
+                        input_data = test_graph_data.features.to(device), test_graph_data.adjacency.to(device)
+                        labels = test_graph_data.labels.to(device)
                         _, output = gnn_model(input_data)
-                        predictions = predict_fn(output)
-                
-                        for i in range(predictions.shape[0]):
-                            if predictions[i, 0] == labels[i]:
-                                train_correct_num += 1
-                        train_acc = train_correct_num / predictions.shape[0] * 100
+                        loss = loss_fn(output, labels)
+                        loss.backward()
+                        optimizer.step()
 
-                        if last_train_acc == 0.0:
-                            last_train_acc = train_acc
-                        else:
-                            train_acc_diff = (train_acc - last_train_acc) / last_train_acc * 100
-                            if train_acc_diff <= 0.5: #0.5%
-                                break
-                            else:
+                        train_correct_num = 0
+                        if (epoch + 1) % 100 == 0:
+                            _, output = gnn_model(input_data)
+                            predictions = predict_fn(output)
+                    
+                            for i in range(predictions.shape[0]):
+                                if predictions[i, 0] == labels[i]:
+                                    train_correct_num += 1
+                            train_acc = train_correct_num / predictions.shape[0] * 100
+
+                            if last_train_acc == 0.0:
                                 last_train_acc = train_acc
+                            else:
+                                train_acc_diff = (train_acc - last_train_acc) / last_train_acc * 100
+                                if train_acc_diff <= 0.5: #0.5%
+                                    break
+                                else:
+                                    last_train_acc = train_acc
 
-            torch.save(gnn_model, fine_tune_model_save_path)
+                torch.save(gnn_model, fine_tune_model_save_path)
 
 
-def prune(args, models_folder_path):
-    substring_path = models_folder_path.split('/')
+def prune(args, load_root):
+    substring_path = load_root.split('/')
     substring_path.remove('..')
     substring_path.remove('')
     substring_path.remove('temp_results')
 
-    prune_models_save_root = '../robustness_results/prune'
+    load_folder_root, save_folder_root = list(), list()
+    save_root = '../robustness_results/prune'
     for i in substring_path:
-        prune_models_save_root = os.path.join(prune_models_save_root, i)
-    if not os.path.exists(prune_models_save_root):
-        os.makedirs(prune_models_save_root)
+        save_root = os.path.join(save_root, i)
+    with os.scandir(load_root) as itr_0:
+        for target_model_folder in itr_0:
+            sub_load_root = os.path.join(load_root, target_model_folder.name)
+            sub_save_root = os.path.join(save_root, target_model_folder.name)
+            with os.scandir(sub_load_root) as itr_1:
+                for mask_mag in itr_1:
+                    final_load_root = os.path.join(sub_load_root, mask_mag.name)
+                    final_save_root = os.path.join(sub_save_root, mask_mag.name)
+                    load_folder_root.append(final_load_root)
+                    save_folder_root.append(final_save_root)
 
-    with os.scandir(models_folder_path) as itr:
-        for entry in itr:
-            if 'train' in entry.name:
-                continue
-            
-            original_model_load_path = os.path.join(models_folder_path, entry.name)
-            prune_model_save_path = os.path.join(prune_models_save_root, entry.name)
-            gnn_model = torch.load(original_model_load_path)
+                    if not os.path.exists(final_save_root):
+                        os.makedirs(final_save_root)
 
-            for name, param in gnn_model.named_parameters():
-                if 'fc' in name:
-                    continue
-                if 'bias' in name:
+    for folder_index in range(len(load_folder_root)):
+        models_folder_path = load_folder_root[folder_index]
+        with os.scandir(models_folder_path) as itr:
+            for entry in itr:
+                if 'train' in entry.name:
                     continue
                 
-                original_param_shape = param.data.shape
-                temp_param = torch.flatten(param.data)
-                prune_num = math.floor(temp_param.shape[0] * args.prune_weight_ratio)
-                prune_index = [i for i in range(temp_param.shape[0])]
-                random.shuffle(prune_index)
-                prune_index = prune_index[:prune_num]
-                temp_param[prune_index] = 0
-                param.data = temp_param.reshape(original_param_shape)
-                
-            torch.save(gnn_model, prune_model_save_path)
+                original_model_load_path = os.path.join(models_folder_path, entry.name)
+                prune_model_save_path = os.path.join(save_folder_root[folder_index], entry.name)
+                gnn_model = torch.load(original_model_load_path)
+
+                for name, param in gnn_model.named_parameters():
+                    if 'fc' in name:
+                        continue
+                    if 'bias' in name:
+                        continue
+                    
+                    original_param_shape = param.data.shape
+                    temp_param = torch.flatten(param.data)
+                    prune_num = math.floor(temp_param.shape[0] * args.prune_weight_ratio)
+                    prune_index = [i for i in range(temp_param.shape[0])]
+                    random.shuffle(prune_index)
+                    prune_index = prune_index[:prune_num]
+                    temp_param[prune_index] = 0
+                    param.data = temp_param.reshape(original_param_shape)
+                    
+                torch.save(gnn_model, prune_model_save_path)
 
 
-def double_extraction(args, models_folder_path):
-    substring_path = models_folder_path.split('/')
+def double_extraction(args, load_root):
+    substring_path = load_root.split('/')
     substring_path.remove('..')
     substring_path.remove('')
     substring_path.remove('temp_results')
 
-    double_extraction_models_save_root = '../robustness_results/double_extraction'
+    load_folder_root, save_folder_root = list(), list()
+    save_root = '../robustness_results/double_extraction'
     for i in substring_path:
-        double_extraction_models_save_root = os.path.join(double_extraction_models_save_root, i)
-    if not os.path.exists(double_extraction_models_save_root):
-        os.makedirs(double_extraction_models_save_root)
+        save_root = os.path.join(save_root, i)
+    with os.scandir(load_root) as itr_0:
+        for target_model_folder in itr_0:
+            sub_load_root = os.path.join(load_root, target_model_folder.name)
+            sub_save_root = os.path.join(save_root, target_model_folder.name)
+            with os.scandir(sub_load_root) as itr_1:
+                for mask_mag in itr_1:
+                    final_load_root = os.path.join(sub_load_root, mask_mag.name)
+                    final_save_root = os.path.join(sub_save_root, mask_mag.name)
+                    load_folder_root.append(final_load_root)
+                    save_folder_root.append(final_save_root)
+
+                    if not os.path.exists(final_save_root):
+                        os.makedirs(final_save_root)
     
     data = utils.datareader.get_data(args)
     graph_data = utils.datareader.GraphData(data, args)
     if args.task_type == 'inductive':
         target_graph_data, shadow_graph_data, attacker_graph_data, test_graph_data = utils.graph_operator.split_subgraph(graph_data)
         graph_data = [target_graph_data, shadow_graph_data, attacker_graph_data, test_graph_data]
-    
-    with os.scandir(models_folder_path) as itr:
-        for entry in itr:
-            if 'train' in entry.name:
-                continue
 
-            original_model_load_path = os.path.join(models_folder_path, entry.name)
-            double_extraction_model_save_path = os.path.join(double_extraction_models_save_root, entry.name)
-            gnn_model = torch.load(original_model_load_path)
-            
-            arch_and_layers = entry.name.split('_')
-            arch_and_layers[-1] = arch_and_layers[-1].strip('.pt')
-            args.extraction_model = arch_and_layers[1]
-            layers = list()
-            for i in arch_and_layers[2:]:
-                layers.append(int(i))
-            args.extraction_hidden_dim = layers
+    for folder_index in range(len(load_folder_root)):
+        models_folder_path = load_folder_root[folder_index]
+        with os.scandir(models_folder_path) as itr:
+            for entry in itr:
+                if 'train' in entry.name:
+                    continue
 
-            _, extraction_acc, extraction_fide = extraction.run(args, double_extraction_model_save_path, graph_data, gnn_model, 'test')
-            print(extraction_acc, extraction_fide)
+                original_model_load_path = os.path.join(models_folder_path, entry.name)
+                double_extraction_model_save_path = os.path.join(save_folder_root[folder_index], entry.name)
+                gnn_model = torch.load(original_model_load_path)
+                
+                arch_and_layers = entry.name.split('_')
+                arch_and_layers[-1] = arch_and_layers[-1].strip('.pt')
+                args.extraction_model = arch_and_layers[1]
+                layers = list()
+                for i in arch_and_layers[2:]:
+                    layers.append(int(i))
+                args.extraction_hidden_dim = layers
+
+                _, extraction_acc, extraction_fide = extraction.run(args, double_extraction_model_save_path, graph_data, gnn_model, 'test')
+                print(extraction_acc, extraction_fide)
 
 
 if __name__ == '__main__':
     args = parse_args()
-    path = '../temp_results/model_states/Citeseer/transductive/extraction_models/mask_by_node/gat_224_256/0.5_0.5/'
+    path = '../temp_results/model_states/Citeseer/transductive/extraction_models/mask_by_dataset/'
     fine_tune(args, path)
+    prune(args,path)
+    double_extraction(args, path)
