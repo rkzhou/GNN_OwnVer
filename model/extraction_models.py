@@ -1,7 +1,7 @@
 import torch
 import torch_geometric.nn as nn
 import torch.nn.functional as F
-from torch.nn import Linear, Sequential, ReLU
+from torch.nn import Linear, Sequential, ReLU, BatchNorm1d
 
 class SageExtract(torch.nn.Module):
     def __init__(self, in_dim, out_dim, hidden_dim=[64, 32]):
@@ -80,10 +80,12 @@ class GinExtract(torch.nn.Module):
         self.layers = torch.nn.ModuleList()
 
         self.layers.append(nn.GINConv(
-            Sequential(Linear(in_dim, hidden_dim[0]), ReLU())))
+            Sequential(Linear(in_dim, in_dim), BatchNorm1d(in_dim), ReLU(),
+                       Linear(in_dim, hidden_dim[0]), ReLU())))
         for i in range(len(hidden_dim) - 1):
             self.layers.append(nn.GINConv(
-            Sequential(Linear(hidden_dim[i], hidden_dim[i+1]), ReLU())))
+                Sequential(Linear(hidden_dim[i], hidden_dim[i]), BatchNorm1d(hidden_dim[i]), ReLU(),
+                        Linear(hidden_dim[i], hidden_dim[i+1]), ReLU())))
         
         self.fc = nn.Linear(hidden_dim[-1], out_dim)
 
@@ -91,7 +93,6 @@ class GinExtract(torch.nn.Module):
         x, edge_index = data
         for layer in self.layers:
             x = layer(x, edge_index)
-            x = F.relu(x)
         
         embedding = x
         x = self.fc(x)
@@ -104,9 +105,9 @@ class SGCExtract(torch.nn.Module):
         super(SGCExtract, self).__init__()
         self.layers = torch.nn.ModuleList()
 
-        self.layers.append(nn.SGConv(in_dim, hidden_dim[0]))
+        self.layers.append(nn.SGConv(in_dim, hidden_dim[0], K=2))
         for i in range(len(hidden_dim) - 1):
-            self.layers.append(nn.SGConv(hidden_dim[i], hidden_dim[i+1]))
+            self.layers.append(nn.SGConv(hidden_dim[i], hidden_dim[i+1], K=2))
         
         self.fc = nn.Linear(hidden_dim[-1], out_dim)
         #self.project_layer = nn.Linear(hidden_dim[-1], out_dim)
