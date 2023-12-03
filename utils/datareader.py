@@ -6,7 +6,7 @@ import math
 import copy
 
 def get_data(args):
-    if args.dataset == 'Cora_ML' or args.dataset == 'Citeseer' or args.dataset == 'DBLP' or args.dataset == 'PubMed':
+    if args.dataset == 'Citeseer' or args.dataset == 'DBLP' or args.dataset == 'PubMed':
         dataset = dt.CitationFull(args.data_path, args.dataset)
         data_path = args.data_path + '/' + (args.dataset).lower() + '/processed/data.pt'
     elif args.dataset == 'Coauthor':
@@ -15,6 +15,9 @@ def get_data(args):
     elif args.dataset == 'Amazon':
         dataset = dt.Amazon(args.data_path, 'Photo')
         data_path = args.data_path + '/' + 'Photo' + '/processed/data.pt'
+    elif args.dataset == 'Cora':
+        dataset = dt.Planetoid(args.data_path, args.dataset)
+        data_path = args.data_path + '/' + args.dataset + '/processed/data.pt'
     
     data = torch.load(data_path)
     
@@ -53,43 +56,22 @@ class GraphData(torch.utils.data.Dataset):
         for i in range(self.node_num):
             each_class_nodes_index[self.labels[i]].append(i)
         
-        # node_index = [i for i in range(self.node_num)]
-        # random.seed(args.dataset_random_seed)
-        # random.shuffle(node_index)
-        # target_nodes_size = math.floor(self.node_num * args.split_dataset_ratio[0])
-        # shadow_nodes_size = math.floor(self.node_num * args.split_dataset_ratio[1])
-        # attacker_nodes_size = math.floor(self.node_num * args.split_dataset_ratio[2])
-        # test_nodes_size = self.node_num - target_nodes_size - shadow_nodes_size - attacker_nodes_size
-        # self.target_nodes_index += node_index[:target_nodes_size]
-        # self.shadow_nodes_index += node_index[target_nodes_size:(target_nodes_size + shadow_nodes_size)]
-        # self.attacker_nodes_index += node_index[(target_nodes_size + shadow_nodes_size):(target_nodes_size + shadow_nodes_size + attacker_nodes_size)]
-        # self.test_nodes_index += node_index[(target_nodes_size + shadow_nodes_size + attacker_nodes_size):]
+        node_index = [i for i in range(self.node_num)]
+        random.seed(args.dataset_random_seed)
+        random.shuffle(node_index)
+        target_nodes_size = math.floor(self.node_num * args.split_dataset_ratio[0])
+        shadow_nodes_size = math.floor(self.node_num * args.split_dataset_ratio[1])
+        attacker_nodes_size = math.floor(self.node_num * args.split_dataset_ratio[2])
+        test_nodes_size = self.node_num - target_nodes_size - shadow_nodes_size - attacker_nodes_size
+        self.target_nodes_index += node_index[:target_nodes_size]
+        self.shadow_nodes_index += node_index[target_nodes_size:(target_nodes_size + shadow_nodes_size)]
+        self.attacker_nodes_index += node_index[(target_nodes_size + shadow_nodes_size):(target_nodes_size + shadow_nodes_size + attacker_nodes_size)]
+        self.test_nodes_index += node_index[(target_nodes_size + shadow_nodes_size + attacker_nodes_size):]
 
-        # self.target_nodes_index.sort()
-        # self.shadow_nodes_index.sort()
-        # self.attacker_nodes_index.sort()
-        # self.test_nodes_index.sort()
-        
-        for i in range(self.class_num):
-            random.seed(args.dataset_random_seed)
-            random.shuffle(each_class_nodes_index[i])
-            class_node_num = len(each_class_nodes_index[i])
-            target_nodes_size = math.floor(class_node_num * args.split_dataset_ratio[0])
-            shadow_nodes_size = math.floor(class_node_num * args.split_dataset_ratio[1])
-            attacker_nodes_size = math.floor(class_node_num * args.split_dataset_ratio[2])
-            test_nodes_size = class_node_num - target_nodes_size - shadow_nodes_size - attacker_nodes_size
-
-            # print(target_nodes_size, shadow_nodes_size, attacker_nodes_size, test_nodes_size)
-
-            self.target_nodes_index += each_class_nodes_index[i][:target_nodes_size]
-            self.shadow_nodes_index += each_class_nodes_index[i][target_nodes_size:(target_nodes_size + shadow_nodes_size)]
-            self.attacker_nodes_index += each_class_nodes_index[i][(target_nodes_size + shadow_nodes_size):(target_nodes_size + shadow_nodes_size + attacker_nodes_size)]
-            self.test_nodes_index += each_class_nodes_index[i][(target_nodes_size + shadow_nodes_size + attacker_nodes_size):]
-
-            self.target_nodes_index.sort()
-            self.shadow_nodes_index.sort()
-            self.attacker_nodes_index.sort()
-            self.test_nodes_index.sort()
+        self.target_nodes_index.sort()
+        self.shadow_nodes_index.sort()
+        self.attacker_nodes_index.sort()
+        self.test_nodes_index.sort()
 
     def __len__(self):
         return self.node_num

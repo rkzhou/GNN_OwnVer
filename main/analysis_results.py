@@ -40,6 +40,7 @@ def merge_results_setting(setting_path, arch="all"):
 
     log_f = open(os.path.join(setting_path, "{}_res.txt".format(arch)), 'w')
 
+    # , "mask_model_acc"
     for field in ["FPR", "FNR", "Accuracy", "original_model_acc", "mask_model_acc"]:
         save_mean_std(res_list, field, log_f)
 
@@ -74,4 +75,7 @@ def merge_results_setting(setting_path, arch="all"):
 
 
 if __name__ == '__main__':
-    merge_results_setting("../res/Citeseer/inductive/mask_by_dataset/0.3_0.3/train_setting1/test_setting2")
+    for node_ratio in [1.0]:
+        for feat_ratio in [0.2]:
+            for setting in [1, 2, 3, 4]:
+                merge_results_setting('/home/ruikai/GNN_OwnVer/res/Citeseer/transductive/random_mask/{}_{}/train_setting1/test_setting{}'.format(node_ratio, feat_ratio, setting))

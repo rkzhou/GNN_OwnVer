@@ -47,7 +47,6 @@ def transductive_train(args, model_save_path, graph_data):
         gnn_model.to(device)
 
         optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr)
-        # scheduler = lr_scheduler.MultiStepLR(optimizer, args.benign_lr_decay_steps, gamma=0.1)
 
         last_train_acc = 0.0
         for epoch in range(args.benign_train_epochs):
@@ -59,10 +58,9 @@ def transductive_train(args, model_save_path, graph_data):
             loss = loss_fn(output[gdata.target_nodes_index], labels[gdata.target_nodes_index])
             loss.backward()
             optimizer.step()
-            # scheduler.step()
 
             train_correct_num = 0
-            if (epoch + 1) % 100 == 0:
+            if (epoch + 1) % 50 == 0:
                 _, output = gnn_model(input_data)
                 pred = predict_fn(output)
                 train_pred = pred[gdata.target_nodes_index]
@@ -147,7 +145,7 @@ def inductive_train(args, model_save_path, graph_data):
             optimizer.step()
 
             train_correct_num = 0
-            if (epoch + 1) % 100 == 0:
+            if (epoch + 1) % 50 == 0:
                 _, output = gnn_model(input_data)
                 predictions = predict_fn(output)
                 

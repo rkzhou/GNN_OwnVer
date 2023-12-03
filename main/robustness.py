@@ -9,7 +9,7 @@ import utils.datareader
 import utils.graph_operator
 import extraction
 
-def fine_tune(args, load_root):
+def fine_tune(args, load_root, specific_mask_mag):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -30,6 +30,8 @@ def fine_tune(args, load_root):
             sub_save_root = os.path.join(save_root, target_model_folder.name)
             with os.scandir(sub_load_root) as itr_1:
                 for mask_mag in itr_1:
+                    if mask_mag.name != specific_mask_mag:
+                        continue
                     final_load_root = os.path.join(sub_load_root, mask_mag.name)
                     final_save_root = os.path.join(sub_save_root, mask_mag.name)
                     load_folder_root.append(final_load_root)
@@ -122,7 +124,7 @@ def fine_tune(args, load_root):
                 torch.save(gnn_model, fine_tune_model_save_path)
 
 
-def prune(args, load_root):
+def prune(args, load_root, specific_mask_mag):
     substring_path = load_root.split('/')
     substring_path.remove('..')
     substring_path.remove('')
@@ -138,8 +140,10 @@ def prune(args, load_root):
             sub_save_root = os.path.join(save_root, target_model_folder.name)
             with os.scandir(sub_load_root) as itr_1:
                 for mask_mag in itr_1:
+                    if mask_mag.name != specific_mask_mag:
+                        continue
                     final_load_root = os.path.join(sub_load_root, mask_mag.name)
-                    final_save_root = os.path.join(sub_save_root, mask_mag.name)
+                    final_save_root = os.path.join(sub_save_root, mask_mag.name, str(args.prune_weight_ratio))
                     load_folder_root.append(final_load_root)
                     save_folder_root.append(final_save_root)
 
@@ -152,9 +156,9 @@ def prune(args, load_root):
             for entry in itr:
                 if 'train' in entry.name:
                     continue
-                
                 original_model_load_path = os.path.join(models_folder_path, entry.name)
                 prune_model_save_path = os.path.join(save_folder_root[folder_index], entry.name)
+
                 gnn_model = torch.load(original_model_load_path)
 
                 for name, param in gnn_model.named_parameters():
@@ -175,7 +179,7 @@ def prune(args, load_root):
                 torch.save(gnn_model, prune_model_save_path)
 
 
-def double_extraction(args, load_root):
+def double_extraction(args, load_root, specific_mask_mag):
     substring_path = load_root.split('/')
     substring_path.remove('..')
     substring_path.remove('')
@@ -191,6 +195,8 @@ def double_extraction(args, load_root):
             sub_save_root = os.path.join(save_root, target_model_folder.name)
             with os.scandir(sub_load_root) as itr_1:
                 for mask_mag in itr_1:
+                    if mask_mag.name != specific_mask_mag:
+                        continue
                     final_load_root = os.path.join(sub_load_root, mask_mag.name)
                     final_save_root = os.path.join(sub_save_root, mask_mag.name)
                     load_folder_root.append(final_load_root)
@@ -230,7 +236,18 @@ def double_extraction(args, load_root):
 
 if __name__ == '__main__':
     args = parse_args()
-    path = '../temp_results/model_states/Citeseer/transductive/extraction_models/mask_by_dataset/'
-    fine_tune(args, path)
-    prune(args,path)
-    double_extraction(args, path)
+    path = '../temp_results/model_states/DBLP/inductive/extraction_models/mask_by_dataset/'
+    fine_tune(args, path, '0.1_0.1')
+    
+    args.prune_weight_ratio = 0.1
+    prune(args, path, '0.1_0.1')
+    args.prune_weight_ratio = 0.2
+    prune(args, path, '0.1_0.1')
+    args.prune_weight_ratio = 0.3
+    prune(args, path, '0.1_0.1')
+    args.prune_weight_ratio = 0.4
+    prune(args, path, '0.1_0.1')
+    args.prune_weight_ratio = 0.5
+    prune(args, path, '0.1_0.1')
+    
+    double_extraction(args, path, '0.1_0.1')

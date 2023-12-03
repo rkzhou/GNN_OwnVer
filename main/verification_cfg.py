@@ -18,8 +18,9 @@ import os
 import yaml
 import itertools
 from datetime import timedelta
+import copy
 
-def extract_logits(graph_data, specific_nodes, independent_model, surrogate_model, target_model):
+def extract_outputs(graph_data, specific_nodes, independent_model, surrogate_model):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -27,163 +28,138 @@ def extract_logits(graph_data, specific_nodes, independent_model, surrogate_mode
     
     independent_model.eval()
     surrogate_model.eval()
-    target_model.eval()
     
     input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
-    _, independent_output = independent_model(input_data)
-    _, surrogate_output = surrogate_model(input_data)
-    _, target_output = target_model(input_data)
+    independent_embedding, independent_logits = independent_model(input_data)
+    surrogate_embedding, surrogate_logits = surrogate_model(input_data)
 
     softmax = torch.nn.Softmax(dim=1)
-    independent_logits = softmax(independent_output)
-    surrogate_logits = softmax(surrogate_output)
-    target_logits = softmax(target_output)
-
-    predict_fn = lambda output: output.max(1, keepdim=True)[1]
-    independent_predictions = predict_fn(independent_logits)
-    surrogate_predictions = predict_fn(surrogate_logits)
+    independent_prob = softmax(independent_logits)
+    surrogate_prob = softmax(surrogate_logits)
 
     if specific_nodes != None:
-        independent_logits = independent_logits[specific_nodes].detach()
-        surrogate_logits = surrogate_logits[specific_nodes].detach()
-        independent_predictions = torch.flatten(independent_predictions[specific_nodes].detach()).view(-1, 1)
-        surrogate_predictions = torch.flatten(surrogate_predictions[specific_nodes].detach()).view(-1, 1)
+        independent_prob = independent_prob[specific_nodes].detach().cpu()
+        surrogate_prob = surrogate_prob[specific_nodes].detach().cpu()
+        independent_embedding = independent_embedding[specific_nodes].detach().cpu()
+        surrogate_embedding = surrogate_embedding[specific_nodes].detach().cpu()
+        independent_logits = independent_logits[specific_nodes].detach().cpu()
+        surrogate_logits = surrogate_logits[specific_nodes].detach().cpu()
 
-
-        independent_logits = torch.cat((independent_logits, independent_predictions), 1)
-        surrogate_logits = torch.cat((surrogate_logits, surrogate_predictions), 1)
-        # target_logits = target_logits[specific_nodes].detach()
-        # independent_logits = torch.abs(independent_logits - target_logits)
-        # surrogate_logits = torch.abs(surrogate_logits - target_logits)
-    
+    probability = {'independent': independent_prob, 'surrogate': surrogate_prob}
+    embedding = {'independent': independent_embedding, 'surrogate': surrogate_embedding}
     logits = {'independent': independent_logits, 'surrogate': surrogate_logits}
-    
-    return logits
 
+    return probability, logits, embedding
 
-def measure_logits(logits):
-    independent_logits = logits['independent']
-    surrogate_logits = logits['surrogate']
-    
-    #independent_var = torch.var(independent_logits, axis=1)
-    #surrogate_var = torch.var(surrogate_logits, axis=1)
-
-    #independent_var = torch.sort(independent_var).values
-    # independent_var = torch.cat([independent_var.values[:100], independent_var.indices[:100]])
-    #surrogate_var = torch.sort(surrogate_var).values
-    # surrogate_var = torch.cat([surrogate_var.values[:100], surrogate_var.indices[:100]])
-    distance_pair = {'label_0': independent_logits, 'label_1': surrogate_logits}
-    
-    return distance_pair
 
 def preprocess_data_flatten(distance_pairs:list):
     total_label0, total_label1 = list(), list()
 
     for pair_index in range(len(distance_pairs)):
-        label0_distance = torch.flatten(distance_pairs[pair_index]['label_0']).view(1, -1)
-        label1_distance = torch.flatten(distance_pairs[pair_index]['label_1']).view(1, -1)
+        label0_distance = torch.flatten(distance_pairs[pair_index]['independent']).view(1, -1)
+        label1_distance = torch.flatten(distance_pairs[pair_index]['surrogate']).view(1, -1)
         
         total_label0.append(label0_distance)
         total_label1.append(label1_distance)
     
-    processed_data = {'label0': total_label0, 'label1': total_label1}
+    processed_data = {'independent': total_label0, 'surrogate': total_label1}
 
     return processed_data
 
 def pair_to_dataloader(distance_pairs, batch_size=5):
     processed_data = preprocess_data_flatten(distance_pairs)
-    dataset = utils.datareader.VarianceData(processed_data['label0'], processed_data['label1'])
+    dataset = utils.datareader.VarianceData(processed_data['independent'], processed_data['surrogate'])
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     return dataloader
 
-class EarlyStopper:
-    def __init__(self, patience=5, min_delta=0.1):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.min_validation_loss = float('inf')
+# class EarlyStopper:
+#     def __init__(self, patience=5, min_delta=0.1):
+#         self.patience = patience
+#         self.min_delta = min_delta
+#         self.counter = 0
+#         self.min_validation_loss = float('inf')
+#
+#     def early_stop(self, validation_loss):
+#         if validation_loss < self.min_validation_loss:
+#             self.min_validation_loss = validation_loss
+#             self.counter = 0
+#         elif validation_loss > (self.min_validation_loss + self.min_delta):
+#             self.counter += 1
+#             if self.counter >= self.patience:
+#                 return True
+#         return False
 
-    def early_stop(self, validation_loss):
-        if validation_loss < self.min_validation_loss:
-            self.min_validation_loss = validation_loss
-            self.counter = 0
-        elif validation_loss > (self.min_validation_loss + self.min_delta):
-            self.counter += 1
-            if self.counter >= self.patience:
-                return True
-        return False
+# def train_classifier(train_distance_pairs, val_distance_pairs):
+#     if torch.cuda.is_available():
+#         device = torch.device('cuda')
+#     else:
+#         device = torch.device('cpu')
+#     # TODO batchsize 5
+#     train_loader = pair_to_dataloader(train_distance_pairs)
+#     val_loader = pair_to_dataloader(val_distance_pairs)
+#     hidden_layers = [128, 64]
+#     model = mlp_nn(train_loader.dataset.data.shape[1], hidden_layers)
+#     loss_fn = torch.nn.CrossEntropyLoss()
+#     # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+#     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+#     epoch_num = 1000
+#
+#     model.to(device)
+#     for epoch_index in range(epoch_num):
+#         model.train()
+#         for _, (inputs, labels) in enumerate(train_loader):
+#             optimizer.zero_grad()
+#             inputs = inputs.to(device)
+#             labels = labels.to(device)
+#             outputs = model(inputs)
+#             loss = loss_fn(outputs, labels)
+#             loss.backward()
+#             optimizer.step()
+#
+#         model.eval()
+#         validation_loss = []
+#         correct = 0
+#         for _, (inputs, labels) in enumerate(val_loader):
+#             inputs = inputs.to(device)
+#             labels = labels.to(device)
+#             outputs = model(inputs)
+#             val_loss = loss_fn(outputs, labels)
+#             validation_loss.append(val_loss.item())
+#             _, predictions = torch.max(outputs.data, 1)
+#             correct += (predictions == labels).sum().item()
+#
+#         val_acc = correct / len(val_loader.dataset) * 100
+#         if val_acc == 100:
+#             break
+#     return model, val_acc
 
-def train_classifier(train_distance_pairs, val_distance_pairs):
-    if torch.cuda.is_available():
-        device = torch.device('cuda')
-    else:
-        device = torch.device('cpu')
-    train_loader = pair_to_dataloader(train_distance_pairs)
-    val_loader = pair_to_dataloader(val_distance_pairs)
-    hidden_layers = [128, 64]
-    model = mlp_nn(train_loader.dataset.data.shape[1], hidden_layers)
-    loss_fn = torch.nn.CrossEntropyLoss()
-    # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    epoch_num = 1000
-
-    model.to(device)
-    # early_stopper = EarlyStopper(patience=5, min_delta=0.00001)
-    for epoch_index in range(epoch_num):
-        model.train()
-        for _, (inputs, labels) in enumerate(train_loader):
-            optimizer.zero_grad()
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-            outputs = model(inputs)
-            loss = loss_fn(outputs, labels)
-            loss.backward()
-            optimizer.step()
-
-        model.eval()
-        validation_loss = []
-        correct = 0
-        for _, (inputs, labels) in enumerate(val_loader):
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-            outputs = model(inputs)
-            val_loss = loss_fn(outputs, labels)
-            validation_loss.append(val_loss.item())
-            _, predictions = torch.max(outputs.data, 1)
-            correct += (predictions == labels).sum().item()
-
-        val_acc = correct / len(val_loader.dataset) * 100
-        if val_acc == 100:
-            break
-    return model, val_acc
-
-def k_fold_split(data, k=5):
-    """将数据分割为k个部分，并迭代地返回训练集和测试集"""
-    fold_size = len(data) // k
-
-    for i in range(k):
-        start = i * fold_size
-        end = start + fold_size
-
-        test = data[start:end]
-        train = data[:start] + data[end:]
-
-        yield train, test
+# def k_fold_split(data, k=5):
+#     """将数据分割为k个部分，并迭代地返回训练集和测试集"""
+#     fold_size = len(data) // k
+#
+#     for i in range(k):
+#         start = i * fold_size
+#         end = start + fold_size
+#
+#         test = data[start:end]
+#         train = data[:start] + data[end:]
+#
+#         yield train, test
 
 
-def train_k_fold(distance_pairs):
-    random.shuffle(distance_pairs)
-
-    max_acc = 0
-    best_model = None
-    for fold, (train_set, test_set) in enumerate(k_fold_split(distance_pairs, 10)):
-
-        model, val_acc = train_classifier(train_set, test_set)
-        if val_acc > max_acc:
-            best_model = model
-            max_acc = val_acc
-
-    return best_model
+# def train_k_fold(distance_pairs):
+#     random.shuffle(distance_pairs)
+#
+#     max_acc = 0
+#     best_model = None
+#     for fold, (train_set, test_set) in enumerate(k_fold_split(distance_pairs, 10)):
+#
+#         model, val_acc = train_classifier(train_set, test_set)
+#         if val_acc > max_acc:
+#             best_model = model
+#             max_acc = val_acc
+#
+#     return best_model
 
 
 def train_original_classifier(distance_pairs: list):
@@ -193,7 +169,7 @@ def train_original_classifier(distance_pairs: list):
         device = torch.device('cpu')
 
     processed_data = preprocess_data_flatten(distance_pairs)
-    dataset = utils.datareader.VarianceData(processed_data['label0'], processed_data['label1'])
+    dataset = utils.datareader.VarianceData(processed_data['independent'], processed_data['surrogate'])
 
     hidden_layers = [128, 64]
     model = mlp_nn(dataset.data.shape[1], hidden_layers)
@@ -203,6 +179,7 @@ def train_original_classifier(distance_pairs: list):
 
     best_model, best_acc = None, 0
     for i in range(10):
+        # TODO batchsize
         dataloader = DataLoader(dataset, batch_size=10, shuffle=True)
 
         model.to(device)
@@ -242,33 +219,19 @@ def train_original_classifier(distance_pairs: list):
         if best_acc == 100:
             break
     print("best acc:{}".format(best_acc))
-    return model
-def owner_verify(graph_data, suspicious_model, verifier_model, measure_nodes, target_model):
+    return best_model
+def owner_verify(suspicious_logits, verifier_model):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
-    
-    suspicious_model.to(device)
-    suspicious_model.eval()
-    target_model.to(device)
-    target_model.eval()
 
-    if measure_nodes != None:
-        suspicious_logits =  extract_logits(graph_data,  measure_nodes, suspicious_model, suspicious_model, target_model)["independent"]
-
-    #suspicious_var = torch.var(suspicious_logits, axis=1)
-
-    #suspicious_var = torch.sort(suspicious_var).values
-    # suspicious_var = torch.cat([suspicious_var.values[:100], suspicious_var.indices[:100]])
-    distance = suspicious_logits
-    distance = torch.flatten(distance).view(1, -1)
+    distance = torch.flatten(suspicious_logits).view(1, -1)
 
     verifier_model.to(device)
     verifier_model.eval()
 
-    inputs = distance.to(device)
-    outputs = verifier_model(inputs)
+    outputs = verifier_model(distance.to(device))
     _, predictions = torch.max(outputs.data, 1)
     
     return predictions
@@ -326,13 +289,13 @@ class GNNVerification():
         # save original model
         original_model_save_root = join_path(self.train_save_root, 'original_models')
         original_model_save_path = os.path.join(original_model_save_root,
-                                                "{}_{}.pt".format(self.args.benign_model, join_name(self.global_cfg["target_hidden_dims"])))
+                                                "{}_{}.pt".format(self.args.benign_model, join_name(self.args.benign_hidden_dim)))
         return benign.run(self.args, original_model_save_path)
 
     def geneate_mask_model(self):
 
         if self.args.task_type == "inductive":
-            extract_logits_data =  self.original_graph_data[0]
+            extract_logits_data = self.original_graph_data[0]
         else:
             extract_logits_data = self.original_graph_data
 
@@ -344,9 +307,14 @@ class GNNVerification():
         mask_model_save_path = os.path.join(mask_model_save_root, "{}.pt".format(self.mask_model_save_name))
 
         if self.args.task_type == "inductive":
-            mask_graph_data = [mask_graph_data, self.original_graph_data[0], self.original_graph_data[1], self.original_graph_data[2]]
+            mask_graph_data = [mask_graph_data, self.original_graph_data[1], self.original_graph_data[2], self.original_graph_data[3]]
 
-        _, mask_model, mask_model_acc = benign.run(self.args, mask_model_save_path, mask_graph_data)
+        if self.args.mask_feat_ratio == 0.0:
+            mask_model = copy.deepcopy(self.original_model)
+            torch.save(mask_model, mask_model_save_path)
+            mask_model_acc = self.original_model_acc
+        else:
+            _, mask_model, mask_model_acc = benign.run(self.args, mask_model_save_path, mask_graph_data)
 
         measure_nodes = []
         for each_class_nodes in mask_nodes:
@@ -412,14 +380,14 @@ class GNNVerification():
 
         return all_model_list, all_acc_list, all_fidelity_list
 
-    def run_single_experiment(self):
+    def run_single_experiment(self, n_run):
         save_json = {}
 
         start = time.time()
         # train original model
         self.original_graph_data, self.original_model, self.original_model_acc = self.train_original_model()
         if self.args.task_type == "inductive":
-            extract_logits_data =  self.original_graph_data[0]
+            extract_logits_data = self.original_graph_data[0]
         else:
             extract_logits_data = self.original_graph_data
 
@@ -427,6 +395,8 @@ class GNNVerification():
         mask_start = time.time()
         self.mask_model, self.mask_model_acc, self.measure_nodes = self.geneate_mask_model()
         mask_run_time = time.time() - mask_start
+
+        mask_outputs, mask_logits, mask_embedding = extract_outputs(extract_logits_data, self.measure_nodes, self.mask_model, self.mask_model)
 
         # train independent model
         train_inde_model_list, train_inde_acc_list, _ = self.train_models_by_setting(self.train_setting_cfg, self.train_save_root,
@@ -437,27 +407,36 @@ class GNNVerification():
                                                                                                             self.mask_model, stage="train", process=self.global_cfg["train_process"])
 
         # TODO
-        pair_list = []
+        train_prob_list, train_logits_list, train_embedding_list = [], [],[]
         for independent_model, extraction_model in zip(train_inde_model_list, train_surr_model_list):
-            logits = extract_logits(extract_logits_data, self.measure_nodes, independent_model, extraction_model, self.mask_model)
-            variance_pair = measure_logits(logits)
-            pair_list.append(variance_pair)
+            outputs, logits, embedding = extract_outputs(extract_logits_data, self.measure_nodes, independent_model, extraction_model)
+            train_prob_list.append(outputs)
+            train_logits_list.append([mask_logits["independent"], logits["independent"], logits["surrogate"]])
+            train_embedding_list.append([mask_embedding["independent"], embedding["independent"], embedding["surrogate"]])
 
-        classifier_model = train_original_classifier(pair_list)
+        train_clf_start = time.time()
+        classifier_model = train_original_classifier(train_prob_list)
         # classifier_model = train_k_fold(pair_list)
+        train_clf_time = time.time()-train_clf_start
 
         # train independent  model
-        test_inde_model_list, test_inde_acc_list, _ = self.train_models_by_setting(self.test_setting_cfg,  self.test_save_root,
+        test_inde_model_list, test_inde_acc_list, _ = self.train_models_by_setting(self.test_setting_cfg,  self.train_save_root,
                                                                       mask_model=None, stage="test")
         # train surrogate model
         test_surr_model_list, test_surr_acc_list, test_surr_fidelity_list = self.train_models_by_setting(
                                                                     self.test_setting_cfg, self.test_save_root,
                                                                     self.mask_model_save_name, self.mask_model, stage="test", process=self.global_cfg["test_process"])
-
+        test_logits_list, test_embedding_list = [], []
         TN, FP, FN, TP = 0, 0, 0, 0
         for test_independent_model, test_extraction_model in zip(test_inde_model_list, test_surr_model_list):
-            ind_pred = owner_verify(extract_logits_data, test_independent_model, classifier_model, self.measure_nodes, self.mask_model)
-            ext_pred = owner_verify(extract_logits_data, test_extraction_model, classifier_model, self.measure_nodes, self.mask_model)
+            independent__outputs, test_inde_logits, test_inde_embedding = extract_outputs(extract_logits_data, self.measure_nodes, test_independent_model, test_independent_model)
+            surrogate_outputs, test_surr_logits, test_surr_embedding = extract_outputs(extract_logits_data, self.measure_nodes, test_extraction_model, test_extraction_model)
+
+            ind_pred = owner_verify(independent__outputs["independent"], classifier_model)
+            ext_pred = owner_verify(surrogate_outputs["surrogate"], classifier_model)
+
+            test_embedding_list.append([mask_embedding["independent"], test_inde_embedding["independent"], test_surr_embedding["surrogate"]])
+            test_logits_list.append([mask_logits["independent"], test_inde_logits["independent"], test_surr_logits["surrogate"]])
 
             if ind_pred == 0:
                 TN += 1
@@ -497,13 +476,27 @@ class GNNVerification():
                                                "{}_{}".format(self.args.mask_node_ratio, self.args.mask_feat_ratio))
         json_save_root = join_path(json_save_root,"train_setting{}".format(self.global_cfg["train_setting"]), "test_setting{}".format(self.global_cfg["test_setting"]))
 
-        with open("{}/{}.json".format(json_save_root, self.mask_model_save_name), "w") as f:
+        with open("{}/{}_{}.json".format(json_save_root, self.mask_model_save_name, n_run), "w") as f:
             f.write(json.dumps(save_json))
 
         with open("{}/train_setting.yaml".format(json_save_root), "w") as f:
             yaml.dump(self.train_setting_cfg, f, default_flow_style=False)
         with open("{}/test_setting.yaml".format(json_save_root), "w") as f:
             yaml.dump(self.test_setting_cfg, f, default_flow_style=False)
+
+        if n_run == 0:
+            torch.save(train_embedding_list,
+                       os.path.join(json_save_root, "{}_train_embedding.pkl".format(self.mask_model_save_name)))
+            torch.save(test_embedding_list,
+                       os.path.join(json_save_root, "{}_test_embedding.pkl".format(self.mask_model_save_name)))
+
+            torch.save(train_logits_list,
+                       os.path.join(json_save_root, "{}_train_logits.pkl".format(self.mask_model_save_name)))
+            torch.save(test_logits_list,
+                       os.path.join(json_save_root, "{}_test_logits.pkl".format(self.mask_model_save_name)))
+
+        # print("Total Time:{}",save_json["total_time"])
+        # print("Train classifier time:{}, Total time:{}, ratio:{}".format(train_clf_time, save_json["total_time"], train_clf_time/save_json["total_time"]))
 
         return TP, FN, TN, FP
 
@@ -518,7 +511,7 @@ def multiple_experiments(args):
     # target_arch_list = ["gat"]
     target_hidden_dim_list = [[352, 128],[288, 128],[224, 128]]
     # target_hidden_dim_list = [[224, 128]]
-    attack_setting_list = [1,2]
+    attack_setting_list = [1, 2, 3, 4]
 
     # load setting
     with open(os.path.join(config_path,'train_setting{}.yaml'.format(global_cfg["train_setting"])), 'r') as file:
@@ -535,20 +528,19 @@ def multiple_experiments(args):
 
     for dataset, test_setting, target_arch, target_hidden_dims in grid_params:
 
-        #
-        args.dataset = dataset
-        args.benign_hidden_dim = target_hidden_dims
-        args.benign_model = target_arch
-        global_cfg['test_setting'] = test_setting
-        global_cfg['target_model'] = target_arch
-        global_cfg['target_hidden_dims'] = target_hidden_dims
-
         # load test setting
         with open(os.path.join(config_path, 'test_setting{}.yaml'.format(test_setting)), 'r') as file:
             test_setting_cfg = yaml.safe_load(file)
+        for n_run in range(global_cfg["n_run"]):
+            args.dataset = dataset
+            args.benign_hidden_dim = target_hidden_dims
+            args.benign_model = target_arch
+            global_cfg['test_setting'] = test_setting
+            global_cfg['target_model'] = target_arch
+            global_cfg['target_hidden_dims'] = target_hidden_dims
 
-        gnn_verification = GNNVerification(args, global_cfg, train_setting_cfg, test_setting_cfg)
-        gnn_verification.run_single_experiment()
+            gnn_verification = GNNVerification(args, global_cfg, train_setting_cfg, test_setting_cfg)
+            gnn_verification.run_single_experiment(n_run)
 
 if __name__ == '__main__':
     from utils.config import parse_args

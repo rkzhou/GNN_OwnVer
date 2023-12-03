@@ -1,14 +1,15 @@
 target_model: gat
 target_hidden_dims: [352, 256]
-dataset: Coauthor
+dataset: PubMed
 train_setting: 1
 test_setting: 1
 embedding_dim: 128
 train_process: "train"
 test_process: "test"
+n_run: 3
 
-train_save_root: ../temp_results/model_states/
-test_save_root: ../temp_results/model_states/
-res_path: ../res/
+train_save_root: ../temp_results/diff/model_states/
+test_save_root: ../temp_results/diff/model_states/
+res_path: ../temp_results/diff/res/
 
 

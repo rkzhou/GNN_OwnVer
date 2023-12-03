@@ -121,7 +121,10 @@ def train_extraction_model(args, model_save_path, data, process):
 
     clf = None
     if args.extraction_method == 'white_box':
-        clf = Classification(out_dim, graph_data.class_num)
+        if args.task_type == "inductive":
+            clf = Classification(out_dim, graph_data[0].class_num)
+        else:
+            clf = Classification(out_dim, graph_data.class_num)
         clf = clf.to(device)
         optimizer_classification = torch.optim.SGD(clf.parameters(), lr=args.extraction_lr)
     elif args.extraction_method == 'black_box':
@@ -152,8 +155,7 @@ def train_extraction_model(args, model_save_path, data, process):
                 extraction_embeddings, extraction_outputs = extraction_model(input_data)
                 part_embeddings = extraction_embeddings[search_nodes_index]
                 part_outputs = extraction_outputs[search_nodes_index]
-                part_outputs = softmax(part_outputs)
-            
+
                 if args.extraction_method == 'white_box':
                     optimizer_medium.zero_grad()
                     optimizer_classification.zero_grad()
@@ -173,7 +175,7 @@ def train_extraction_model(args, model_save_path, data, process):
                     loss.backward()
                     optimizer_medium.step()
 
-                if (epoch + 1) % 100 == 0:
+                if (epoch + 1) % 50 == 0:
                     extraction_model.eval()
                     if args.extraction_method == 'white_box':
                         clf.eval()
@@ -251,8 +253,7 @@ def train_extraction_model(args, model_save_path, data, process):
 
                 input_data = using_graph_data.features.to(device), using_graph_data.adjacency.to(device)
                 extraction_embeddings, extraction_outputs = extraction_model(input_data)
-                extraction_outputs = softmax(extraction_outputs)
-            
+
                 if args.extraction_method == 'white_box':
                     optimizer_medium.zero_grad()
                     optimizer_classification.zero_grad()
@@ -272,7 +273,7 @@ def train_extraction_model(args, model_save_path, data, process):
                     loss.backward()
                     optimizer_medium.step()
 
-                if (epoch + 1) % 100 == 0:
+                if (epoch + 1) % 50 == 0:
                     extraction_model.eval()
                     if args.extraction_method == 'white_box':
                         clf.eval()

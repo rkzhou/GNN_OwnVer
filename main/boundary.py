@@ -29,46 +29,19 @@ def mask_graph_data(args, graph_data, model):
             mask_features = mask_features[:mask_feat_num]
         elif args.mask_feat_type == 'mask_by_dataset':
             mask_features = find_mask_features_overall(args, graph_data, mask_feat_num)
-        elif args.mask_feat_type == 'mask_by_node':
-
-            pkl_save_path = "../temp_results/feature_importances/{}/".format(args.dataset)
-            if not os.path.exists(pkl_save_path):
-                os.makedirs(pkl_save_path)
-
-            path = Path('{}/{}.pkl'.format(pkl_save_path, args.task_type))
-
-            if path.is_file():
-                with open(path, 'rb') as f:
-                    feat_importances = pickle.load(f)
-            else:
-                feat_importances = find_mask_features_individual(args, graph_data, model)
-                with open(path, 'wb') as f:
-                    pickle.dump(feat_importances, f)
-            mask_features = dict()
-            for node_class in mask_nodes:
-                for node_index in node_class:
-                    mask_features.update({node_index:feat_importances[node_index][:mask_feat_num]})
         else:
             raise ValueError('Invalid mask method')
 
-        # torch.random.seed(args.feature_random_seed)
-        # torch.randint(0, 1, size=mask_feat_num)
-        # flip the selected features of chosen nodes
-        if args.mask_feat_type == 'random_mask' or args.mask_feat_type == 'mask_by_dataset':
-            for node_class in mask_nodes:
-                for node_index in node_class:
-                    for i in range(mask_feat_num):
-                        if args.mask_method == "flip":
-                            new_graph_data.features[node_index][mask_features[i]] = (new_graph_data.features[node_index][mask_features[i]] + 1) % 2
-                        elif  args.mask_method == "fix":
-                            new_graph_data.features[node_index][mask_features[i]] = 0
-                        # elif  args.mask_method == "random":
-                        #     new_graph_data.features[node_index][mask_features[i]] =
+        for node_class in mask_nodes:
+            for node_index in node_class:
+                for i in range(mask_feat_num):
+                    if args.mask_method == "flip":
+                        new_graph_data.features[node_index][mask_features[i]] = (new_graph_data.features[node_index][mask_features[i]] + 1) % 2
+                    elif  args.mask_method == "fix":
+                        new_graph_data.features[node_index][mask_features[i]] = 0
 
-        elif args.mask_feat_type == 'mask_by_node':
-            for node_index, feat_list in mask_features.items():
-                for feat_index in feat_list:
-                    new_graph_data.features[node_index, feat_index] = (new_graph_data.features[node_index, feat_index] + 1) % 2
+        # for i in range(mask_feat_num):
+        #     new_graph_data.features[:][mask_features[i]] = 0
     
     return new_graph_data, mask_nodes
 
