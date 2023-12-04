@@ -43,7 +43,7 @@ def fine_tune(args, load_root, specific_mask_mag):
     data = utils.datareader.get_data(args)
     graph_data = utils.datareader.GraphData(data, args)
     if args.task_type == 'inductive':
-        _, _, _, test_graph_data = utils.graph_operator.split_subgraph(graph_data)
+        _, graph_data, _, _ = utils.graph_operator.split_subgraph(graph_data)
     loss_fn = torch.nn.CrossEntropyLoss()
     predict_fn = lambda output: output.max(1, keepdim=True)[1]
 
@@ -70,7 +70,7 @@ def fine_tune(args, load_root, specific_mask_mag):
                         input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
                         labels = graph_data.labels.to(device)
                         _, output = gnn_model(input_data)
-                        loss = loss_fn(output[graph_data.test_nodes_index], labels[graph_data.test_nodes_index])
+                        loss = loss_fn(output[graph_data.shadow_nodes_index], labels[graph_data.shadow_nodes_index])
                         loss.backward()
                         optimizer.step()
 
@@ -95,8 +95,8 @@ def fine_tune(args, load_root, specific_mask_mag):
                 elif args.task_type == 'inductive':
                     for epoch in range(args.benign_train_epochs):
                         optimizer.zero_grad()
-                        input_data = test_graph_data.features.to(device), test_graph_data.adjacency.to(device)
-                        labels = test_graph_data.labels.to(device)
+                        input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
+                        labels = graph_data.labels.to(device)
                         _, output = gnn_model(input_data)
                         loss = loss_fn(output, labels)
                         loss.backward()
@@ -132,6 +132,8 @@ def prune(args, load_root, specific_mask_mag):
 
     load_folder_root, save_folder_root = list(), list()
     save_root = '../robustness_results/prune'
+    save_root = os.path.join(save_root, str(args.prune_weight_ratio))
+
     for i in substring_path:
         save_root = os.path.join(save_root, i)
     with os.scandir(load_root) as itr_0:
@@ -143,7 +145,7 @@ def prune(args, load_root, specific_mask_mag):
                     if mask_mag.name != specific_mask_mag:
                         continue
                     final_load_root = os.path.join(sub_load_root, mask_mag.name)
-                    final_save_root = os.path.join(sub_save_root, mask_mag.name, str(args.prune_weight_ratio))
+                    final_save_root = os.path.join(sub_save_root, mask_mag.name)
                     load_folder_root.append(final_load_root)
                     save_folder_root.append(final_save_root)
 
@@ -230,24 +232,33 @@ def double_extraction(args, load_root, specific_mask_mag):
                     layers.append(int(i))
                 args.extraction_hidden_dim = layers
 
-                _, extraction_acc, extraction_fide = extraction.run(args, double_extraction_model_save_path, graph_data, gnn_model, 'test')
-                print(extraction_acc, extraction_fide)
+                _, _, _ = extraction.run(args, double_extraction_model_save_path, graph_data, gnn_model, 'test')
 
 
 if __name__ == '__main__':
     args = parse_args()
-    path = '../temp_results/model_states/DBLP/inductive/extraction_models/mask_by_dataset/'
-    fine_tune(args, path, '0.1_0.1')
+
+    # transductive
+    args.task_type = 'transductive'
+    path = '../temp_results/diff/model_states/Cora/transductive/extraction_models/random_mask/'
+    transductive_mask_mag = '1.0_0.2'
+    fine_tune(args, path, transductive_mask_mag)
     
-    args.prune_weight_ratio = 0.1
-    prune(args, path, '0.1_0.1')
-    args.prune_weight_ratio = 0.2
-    prune(args, path, '0.1_0.1')
-    args.prune_weight_ratio = 0.3
-    prune(args, path, '0.1_0.1')
-    args.prune_weight_ratio = 0.4
-    prune(args, path, '0.1_0.1')
-    args.prune_weight_ratio = 0.5
-    prune(args, path, '0.1_0.1')
+    for prune_ratio in [0.1, 0.2, 0.3, 0.4, 0.5]:
+        args.prune_weight_ratio = prune_ratio
+        prune(args, path, transductive_mask_mag)
     
-    double_extraction(args, path, '0.1_0.1')
+    double_extraction(args, path, transductive_mask_mag)
+
+
+    # inductive
+    args.task_type = 'inductive'
+    path = '../temp_results/diff/model_states/Cora/inductive/extraction_models/random_mask/'
+    inductive_mask_mag = '1.0_0.05'
+    fine_tune(args, path, inductive_mask_mag)
+    
+    for prune_ratio in [0.1, 0.2, 0.3, 0.4, 0.5]:
+        args.prune_weight_ratio = prune_ratio
+        prune(args, path, inductive_mask_mag)
+    
+    double_extraction(args, path, inductive_mask_mag)
