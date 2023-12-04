@@ -24,7 +24,7 @@ def fine_tune(args, load_root, specific_mask_mag):
     substring_path.remove('temp_results')
 
     load_folder_root, save_folder_root = list(), list()
-    save_root = '../robustness_results/fine_tune'
+    save_root = '../robustness_results/fine_tune/diff'
     for i in substring_path:
         save_root = os.path.join(save_root, i)
     with os.scandir(load_root) as itr_0:
@@ -251,7 +251,7 @@ if __name__ == '__main__':
     transductive_mask_mag = '1.0_{}'.format(args.mask_feat_ratio)
     fine_tune(args, path, transductive_mask_mag)
 
-    global_cfg["test_save_root"] = "../robustness_results/fine_tune"
+    global_cfg["test_save_root"] = "../robustness_results/fine_tune/diff/model_states/"
     global_cfg["res_path"] = "../robustness_results/res/fine_tune"
     multiple_experiments(args, global_cfg)
     
@@ -259,13 +259,13 @@ if __name__ == '__main__':
     for prune_ratio in [0.1, 0.2, 0.3, 0.4, 0.5]:
         args.prune_weight_ratio = prune_ratio
         prune(args, path, transductive_mask_mag)
-        global_cfg["test_save_root"] = "../robustness_results/prune/{}".format(prune_ratio)
+        global_cfg["test_save_root"] = "../robustness_results/prune/{}/diff/model_states/".format(prune_ratio)
         global_cfg["res_path"] = "../robustness_results/res/prune/{}".format(prune_ratio)
         multiple_experiments(args, global_cfg)
         
 
     double_extraction(args, path, transductive_mask_mag)
-    global_cfg["test_save_root"] = "../robustness_results/double_extraction"
+    global_cfg["test_save_root"] = "../robustness_results/double_extraction/diff/model_states/"
     global_cfg["res_path"] = "../robustness_results/res/double_extraction"
     multiple_experiments(args, global_cfg)
 
@@ -277,7 +277,7 @@ if __name__ == '__main__':
     inductive_mask_mag = '1.0_{}'.format(args.mask_feat_ratio)
     fine_tune(args, path, inductive_mask_mag)
 
-    global_cfg["test_save_root"] = "../robustness_results/fine_tune"
+    global_cfg["test_save_root"] = "../robustness_results/fine_tune/diff/model_states/"
     global_cfg["res_path"] = "../robustness_results/res/fine_tune"
     multiple_experiments(args, global_cfg)
 
@@ -285,13 +285,13 @@ if __name__ == '__main__':
     for prune_ratio in [0.1, 0.2, 0.3, 0.4, 0.5]:
         args.prune_weight_ratio = prune_ratio
         prune(args, path, inductive_mask_mag)
-        global_cfg["test_save_root"] = "../robustness_results/prune/{}".format(prune_ratio)
+        global_cfg["test_save_root"] = "../robustness_results/prune/{}/diff/model_states/".format(prune_ratio)
         global_cfg["res_path"] = "../robustness_results/res/prune/{}".format(prune_ratio)
         multiple_experiments(args, global_cfg)
 
     
     double_extraction(args, path, inductive_mask_mag)
-    global_cfg["test_save_root"] = "../robustness_results/double_extraction"
+    global_cfg["test_save_root"] = "../robustness_results/double_extraction/diff/model_states/"
     global_cfg["res_path"] = "../robustness_results/res/double_extraction"
     multiple_experiments(args, global_cfg)
     
