@@ -247,8 +247,8 @@ if __name__ == '__main__':
     # transductive
     args.task_type = 'transductive'
     args.mask_feat_ratio = 0.2
-    path = '../temp_results/diff/model_states/Cora/transductive/extraction_models/random_mask/'
-    transductive_mask_mag = '1.0_0.2'
+    path = '../temp_results/diff/model_states/{}/transductive/extraction_models/random_mask/'.format(global_cfg['dataset'])
+    transductive_mask_mag = '1.0_{}'.format(args.mask_feat_ratio)
     fine_tune(args, path, transductive_mask_mag)
 
     global_cfg["test_save_root"] = "../robustness_results/fine_tune"
@@ -273,8 +273,8 @@ if __name__ == '__main__':
     # inductive
     args.task_type = 'inductive'
     args.mask_feat_ratio = 0.05
-    path = '../temp_results/diff/model_states/Cora/inductive/extraction_models/random_mask/'
-    inductive_mask_mag = '1.0_0.05'
+    path = '../temp_results/diff/model_states/{}/inductive/extraction_models/random_mask/'.format(global_cfg['dataset'])
+    inductive_mask_mag = '1.0_{}'.format(args.mask_feat_ratio)
     fine_tune(args, path, inductive_mask_mag)
 
     global_cfg["test_save_root"] = "../robustness_results/fine_tune"
