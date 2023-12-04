@@ -500,12 +500,10 @@ class GNNVerification():
 
         return TP, FN, TN, FP
 
-def multiple_experiments(args):
+def multiple_experiments(args, global_cfg):
 
     config_path = "../config"
-    with open(os.path.join(config_path, "global_cfg.yaml"), 'r') as file:
-        global_cfg = yaml.safe_load(file)
-
+  
     # ['dblp', 'citeseer_full', 'pubmed', 'coauthor_phy', 'acm', 'amazon_photo']
     target_arch_list = ["gat", "gcn", "sage"]
     # target_arch_list = ["gat"]
@@ -548,4 +546,8 @@ if __name__ == '__main__':
 
     args = parse_args()
     # ownver(args)
-    multiple_experiments(args)
+
+    with open(os.path.join("../config", "global_cfg.yaml"), 'r') as file:
+        global_cfg = yaml.safe_load(file)
+
+    multiple_experiments(args, global_cfg)

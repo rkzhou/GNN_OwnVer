@@ -8,6 +8,9 @@ from utils.config import parse_args
 import utils.datareader
 import utils.graph_operator
 import extraction
+from verification_cfg import multiple_experiments
+import yaml
+
 
 def fine_tune(args, load_root, specific_mask_mag):
     if torch.cuda.is_available():
@@ -238,27 +241,59 @@ def double_extraction(args, load_root, specific_mask_mag):
 if __name__ == '__main__':
     args = parse_args()
 
+    with open(os.path.join("../config", "global_cfg.yaml"), 'r') as file:
+        global_cfg = yaml.safe_load(file)
+
     # transductive
     args.task_type = 'transductive'
+    args.mask_feat_ratio = 0.2
     path = '../temp_results/diff/model_states/Cora/transductive/extraction_models/random_mask/'
     transductive_mask_mag = '1.0_0.2'
     fine_tune(args, path, transductive_mask_mag)
+
+    global_cfg["test_save_root"] = "../robustness_results/fine_tune"
+    global_cfg["res_path"] = "../robustness_results/res/fine_tune"
+    multiple_experiments(args, global_cfg)
     
+
     for prune_ratio in [0.1, 0.2, 0.3, 0.4, 0.5]:
         args.prune_weight_ratio = prune_ratio
         prune(args, path, transductive_mask_mag)
-    
+        global_cfg["test_save_root"] = "../robustness_results/prune{}".format(prune_ratio)
+        global_cfg["res_path"] = "../robustness_results/res/prune/{}".format(prune_ratio)
+        multiple_experiments(args, global_cfg)
+        
+
     double_extraction(args, path, transductive_mask_mag)
+    global_cfg["test_save_root"] = "../robustness_results/double_extraction"
+    global_cfg["res_path"] = "../robustness_results/res/double_extraction"
+    multiple_experiments(args, global_cfg)
 
-
+    
     # inductive
     args.task_type = 'inductive'
+    args.mask_feat_ratio = 0.05
     path = '../temp_results/diff/model_states/Cora/inductive/extraction_models/random_mask/'
     inductive_mask_mag = '1.0_0.05'
     fine_tune(args, path, inductive_mask_mag)
+
+    global_cfg["test_save_root"] = "../robustness_results/fine_tune"
+    global_cfg["res_path"] = "../robustness_results/res/fine_tune"
+    multiple_experiments(args, global_cfg)
+
     
     for prune_ratio in [0.1, 0.2, 0.3, 0.4, 0.5]:
         args.prune_weight_ratio = prune_ratio
         prune(args, path, inductive_mask_mag)
+        global_cfg["test_save_root"] = "../robustness_results/prune{}".format(prune_ratio)
+        global_cfg["res_path"] = "../robustness_results/res/prune/{}".format(prune_ratio)
+        multiple_experiments(args, global_cfg)
+
     
     double_extraction(args, path, inductive_mask_mag)
+    global_cfg["test_save_root"] = "../robustness_results/double_extraction"
+    global_cfg["res_path"] = "../robustness_results/res/double_extraction"
+    multiple_experiments(args, global_cfg)
+    
+
+
