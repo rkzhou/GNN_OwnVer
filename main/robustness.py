@@ -259,7 +259,7 @@ if __name__ == '__main__':
     for prune_ratio in [0.1, 0.2, 0.3, 0.4, 0.5]:
         args.prune_weight_ratio = prune_ratio
         prune(args, path, transductive_mask_mag)
-        global_cfg["test_save_root"] = "../robustness_results/prune{}".format(prune_ratio)
+        global_cfg["test_save_root"] = "../robustness_results/prune/{}".format(prune_ratio)
         global_cfg["res_path"] = "../robustness_results/res/prune/{}".format(prune_ratio)
         multiple_experiments(args, global_cfg)
         
@@ -285,7 +285,7 @@ if __name__ == '__main__':
     for prune_ratio in [0.1, 0.2, 0.3, 0.4, 0.5]:
         args.prune_weight_ratio = prune_ratio
         prune(args, path, inductive_mask_mag)
-        global_cfg["test_save_root"] = "../robustness_results/prune{}".format(prune_ratio)
+        global_cfg["test_save_root"] = "../robustness_results/prune/{}".format(prune_ratio)
         global_cfg["res_path"] = "../robustness_results/res/prune/{}".format(prune_ratio)
         multiple_experiments(args, global_cfg)
 
