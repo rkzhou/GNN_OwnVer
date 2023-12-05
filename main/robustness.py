@@ -24,7 +24,7 @@ def fine_tune(args, load_root, specific_mask_mag):
     substring_path.remove('temp_results')
 
     load_folder_root, save_folder_root = list(), list()
-    save_root = '../robustness_results/fine_tune/diff'
+    save_root = '../robustness_results/fine_tune'
     for i in substring_path:
         save_root = os.path.join(save_root, i)
     with os.scandir(load_root) as itr_0:
