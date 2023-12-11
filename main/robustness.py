@@ -46,7 +46,7 @@ def fine_tune(args, load_root, specific_mask_mag):
     data = utils.datareader.get_data(args)
     graph_data = utils.datareader.GraphData(data, args)
     if args.task_type == 'inductive':
-        _, graph_data, _, _ = utils.graph_operator.split_subgraph(graph_data)
+        _, _, graph_data, _ = utils.graph_operator.split_subgraph(graph_data)
     loss_fn = torch.nn.CrossEntropyLoss()
     predict_fn = lambda output: output.max(1, keepdim=True)[1]
 
@@ -73,7 +73,7 @@ def fine_tune(args, load_root, specific_mask_mag):
                         input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
                         labels = graph_data.labels.to(device)
                         _, output = gnn_model(input_data)
-                        loss = loss_fn(output[graph_data.shadow_nodes_index], labels[graph_data.shadow_nodes_index])
+                        loss = loss_fn(output[graph_data.attacker_nodes_index], labels[graph_data.attacker_nodes_index])
                         loss.backward()
                         optimizer.step()
 
@@ -81,8 +81,8 @@ def fine_tune(args, load_root, specific_mask_mag):
                         if (epoch + 1) % 100 == 0:
                             _, output = gnn_model(input_data)
                             pred = predict_fn(output)
-                            train_pred = pred[graph_data.test_nodes_index]
-                            train_labels = graph_data.labels[graph_data.test_nodes_index]
+                            train_pred = pred[graph_data.attacker_nodes_index]
+                            train_labels = graph_data.labels[graph_data.attacker_nodes_index]
                             for i in range(train_pred.shape[0]):
                                 if train_pred[i, 0] == train_labels[i]:
                                     train_correct_num += 1
@@ -246,17 +246,17 @@ if __name__ == '__main__':
 
     # transductive
     args.task_type = 'transductive'
-    args.mask_feat_ratio = 0.2
+    args.mask_feat_ratio = 0.1
     path = '../temp_results/diff/model_states/{}/transductive/extraction_models/random_mask/'.format(global_cfg['dataset'])
     transductive_mask_mag = '1.0_{}'.format(args.mask_feat_ratio)
-    fine_tune(args, path, transductive_mask_mag)
+    # fine_tune(args, path, transductive_mask_mag)
 
     global_cfg["test_save_root"] = "../robustness_results/fine_tune/diff/model_states/"
     global_cfg["res_path"] = "../robustness_results/res/fine_tune"
-    multiple_experiments(args, global_cfg)
+    # multiple_experiments(args, global_cfg)
     
 
-    for prune_ratio in [0.1, 0.2, 0.3, 0.4, 0.5]:
+    for prune_ratio in [0.6, 0.7]:
         args.prune_weight_ratio = prune_ratio
         prune(args, path, transductive_mask_mag)
         global_cfg["test_save_root"] = "../robustness_results/prune/{}/diff/model_states/".format(prune_ratio)
@@ -264,10 +264,10 @@ if __name__ == '__main__':
         multiple_experiments(args, global_cfg)
         
 
-    double_extraction(args, path, transductive_mask_mag)
+    # double_extraction(args, path, transductive_mask_mag)
     global_cfg["test_save_root"] = "../robustness_results/double_extraction/diff/model_states/"
     global_cfg["res_path"] = "../robustness_results/res/double_extraction"
-    multiple_experiments(args, global_cfg)
+    # multiple_experiments(args, global_cfg)
 
     
     # inductive
@@ -275,14 +275,14 @@ if __name__ == '__main__':
     args.mask_feat_ratio = 0.05
     path = '../temp_results/diff/model_states/{}/inductive/extraction_models/random_mask/'.format(global_cfg['dataset'])
     inductive_mask_mag = '1.0_{}'.format(args.mask_feat_ratio)
-    fine_tune(args, path, inductive_mask_mag)
+    # fine_tune(args, path, inductive_mask_mag)
 
     global_cfg["test_save_root"] = "../robustness_results/fine_tune/diff/model_states/"
     global_cfg["res_path"] = "../robustness_results/res/fine_tune"
-    multiple_experiments(args, global_cfg)
+    # multiple_experiments(args, global_cfg)
 
     
-    for prune_ratio in [0.1, 0.2, 0.3, 0.4, 0.5]:
+    for prune_ratio in [0.6, 0.7]:
         args.prune_weight_ratio = prune_ratio
         prune(args, path, inductive_mask_mag)
         global_cfg["test_save_root"] = "../robustness_results/prune/{}/diff/model_states/".format(prune_ratio)
@@ -290,10 +290,10 @@ if __name__ == '__main__':
         multiple_experiments(args, global_cfg)
 
     
-    double_extraction(args, path, inductive_mask_mag)
+    # double_extraction(args, path, inductive_mask_mag)
     global_cfg["test_save_root"] = "../robustness_results/double_extraction/diff/model_states/"
     global_cfg["res_path"] = "../robustness_results/res/double_extraction"
-    multiple_experiments(args, global_cfg)
+    # multiple_experiments(args, global_cfg)
     
 
 
