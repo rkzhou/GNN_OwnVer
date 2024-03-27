@@ -10,9 +10,15 @@ All third-party packages used in the code can be easily installed by pip or anac
 
 Package list:
 
-pytorch, torch_geometric (need to be installed as the version which is suitable for your CUDA version, the CUDA version in our environment is 11.8)
-
-numpy, scikit-learn, tqdm, yaml, argparse.
+```
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install torch_geometric
+pip install numpy
+pip install scikit-learn
+pip install tqdm
+pip install pyyaml
+pip install argparse
+```
 
 ## File Helper
 
@@ -49,6 +55,10 @@ In this section, we will introduce some parameters inside files.
 
 Everytime after you set the corresponding parameters, you can directly run the "main.py" file under the "main" folder.
 
+```
+python main.py
+```
+
 With the default settings, you will run four verification settings, with no masking magnitude, in the Cora dataset, under transductive learning.
 
 ### Robustness Experiments
@@ -58,6 +68,10 @@ Fine-tune, prune and double extraction are all implemented in the "robustness.py
 Besides, for the prune test, you need to set the magnitude of pruning.
 
 After setting corresponding parameters, you can run the "robustness.py" file directly.
+
+```
+python robustness.py
+```
 
 ### Extended Studies
 
