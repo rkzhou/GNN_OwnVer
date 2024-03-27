@@ -67,7 +67,7 @@ Fine-tune, prune and double extraction are all implemented in the "robustness.py
 
 Besides, for the prune test, you need to set the magnitude of pruning.
 
-After setting corresponding parameters, you can run the "robustness.py" file directly.
+After setting corresponding parameters, you can directly run the "robustness.py" file under the "main" folder.
 
 ```
 python robustness.py
