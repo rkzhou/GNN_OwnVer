@@ -1,5 +1,4 @@
 import json
-
 import torch
 import benign
 import extraction
@@ -19,6 +18,7 @@ import yaml
 import itertools
 from datetime import timedelta
 import copy
+
 
 def extract_outputs(graph_data, specific_nodes, independent_model, surrogate_model):
     if torch.cuda.is_available():
@@ -66,100 +66,12 @@ def preprocess_data_flatten(distance_pairs:list):
 
     return processed_data
 
+
 def pair_to_dataloader(distance_pairs, batch_size=5):
     processed_data = preprocess_data_flatten(distance_pairs)
     dataset = utils.datareader.VarianceData(processed_data['independent'], processed_data['surrogate'])
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     return dataloader
-
-# class EarlyStopper:
-#     def __init__(self, patience=5, min_delta=0.1):
-#         self.patience = patience
-#         self.min_delta = min_delta
-#         self.counter = 0
-#         self.min_validation_loss = float('inf')
-#
-#     def early_stop(self, validation_loss):
-#         if validation_loss < self.min_validation_loss:
-#             self.min_validation_loss = validation_loss
-#             self.counter = 0
-#         elif validation_loss > (self.min_validation_loss + self.min_delta):
-#             self.counter += 1
-#             if self.counter >= self.patience:
-#                 return True
-#         return False
-
-# def train_classifier(train_distance_pairs, val_distance_pairs):
-#     if torch.cuda.is_available():
-#         device = torch.device('cuda')
-#     else:
-#         device = torch.device('cpu')
-#     # TODO batchsize 5
-#     train_loader = pair_to_dataloader(train_distance_pairs)
-#     val_loader = pair_to_dataloader(val_distance_pairs)
-#     hidden_layers = [128, 64]
-#     model = mlp_nn(train_loader.dataset.data.shape[1], hidden_layers)
-#     loss_fn = torch.nn.CrossEntropyLoss()
-#     # optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-#     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-#     epoch_num = 1000
-#
-#     model.to(device)
-#     for epoch_index in range(epoch_num):
-#         model.train()
-#         for _, (inputs, labels) in enumerate(train_loader):
-#             optimizer.zero_grad()
-#             inputs = inputs.to(device)
-#             labels = labels.to(device)
-#             outputs = model(inputs)
-#             loss = loss_fn(outputs, labels)
-#             loss.backward()
-#             optimizer.step()
-#
-#         model.eval()
-#         validation_loss = []
-#         correct = 0
-#         for _, (inputs, labels) in enumerate(val_loader):
-#             inputs = inputs.to(device)
-#             labels = labels.to(device)
-#             outputs = model(inputs)
-#             val_loss = loss_fn(outputs, labels)
-#             validation_loss.append(val_loss.item())
-#             _, predictions = torch.max(outputs.data, 1)
-#             correct += (predictions == labels).sum().item()
-#
-#         val_acc = correct / len(val_loader.dataset) * 100
-#         if val_acc == 100:
-#             break
-#     return model, val_acc
-
-# def k_fold_split(data, k=5):
-#     """将数据分割为k个部分，并迭代地返回训练集和测试集"""
-#     fold_size = len(data) // k
-#
-#     for i in range(k):
-#         start = i * fold_size
-#         end = start + fold_size
-#
-#         test = data[start:end]
-#         train = data[:start] + data[end:]
-#
-#         yield train, test
-
-
-# def train_k_fold(distance_pairs):
-#     random.shuffle(distance_pairs)
-#
-#     max_acc = 0
-#     best_model = None
-#     for fold, (train_set, test_set) in enumerate(k_fold_split(distance_pairs, 10)):
-#
-#         model, val_acc = train_classifier(train_set, test_set)
-#         if val_acc > max_acc:
-#             best_model = model
-#             max_acc = val_acc
-#
-#     return best_model
 
 
 def train_original_classifier(distance_pairs: list):
@@ -179,7 +91,6 @@ def train_original_classifier(distance_pairs: list):
 
     best_model, best_acc = None, 0
     for i in range(10):
-        # TODO batchsize
         dataloader = DataLoader(dataset, batch_size=10, shuffle=True)
 
         model.to(device)
@@ -220,6 +131,8 @@ def train_original_classifier(distance_pairs: list):
             break
     print("best acc:{}".format(best_acc))
     return best_model
+
+
 def owner_verify(suspicious_logits, verifier_model):
     if torch.cuda.is_available():
         device = torch.device('cuda')
@@ -243,9 +156,11 @@ def join_path(*save_path):
         os.makedirs(original_model_save_root)
     return original_model_save_root
 
+
 def join_name(hidden_dims):
     str_dims = [str(n) for n in hidden_dims]
     return "_".join(str_dims)
+
 
 def random_generate_arch(layer_dims, num_hidden_layers, seed):
 
@@ -324,7 +239,7 @@ class GNNVerification():
 
     # all model generate by this function will automaticly add a final layer for grove
     def train_models_by_arch(self, setting_cfg, model_arch, model_save_root, seed,
-                             mask_model_save_name=None, mask_model=None, stage="train", process="train"):
+                             mask_model_save_name=None, mask_model=None, stage="train", process="train", classifier=None):
 
         hidden_dims_generator = random_generate_arch(setting_cfg["layer_dims"], setting_cfg["num_hidden_layers"],
                                                      seed=seed)
@@ -347,7 +262,7 @@ class GNNVerification():
                 independent_model_save_path = os.path.join(independent_model_save_root,
                                                            "{}_{}_{}.pt".format(stage, self.args.benign_model,
                                                                                 join_name(hidden_dims)))
-                _, model, model_acc = benign.run(self.args, independent_model_save_path, self.original_graph_data)
+                _, model, model_acc = benign.run(self.args, independent_model_save_path, self.original_graph_data, process)
 
             else:
                 self.args.extraction_hidden_dim = hidden_dims
@@ -359,7 +274,7 @@ class GNNVerification():
                                                           "{}_{}_{}.pt".format(stage, self.args.extraction_model,
                                                                                join_name(hidden_dims)))
                 model, model_acc, fidelity = extraction.run(self.args, extraction_model_save_path,
-                                                            self.original_graph_data, mask_model, process)
+                                                            self.original_graph_data, mask_model, process, classifier)
                 fidelity_list.append(fidelity)
 
             model_list.append(model)
@@ -367,11 +282,11 @@ class GNNVerification():
 
         return model_list, acc_list, fidelity_list
     # This function train all models accroding to setting config
-    def train_models_by_setting(self, setting_cfg,  model_save_root, mask_model_save_name=None, mask_model=None, stage="train", process="train"):
+    def train_models_by_setting(self, setting_cfg,  model_save_root, mask_model_save_name=None, mask_model=None, stage="train", process="train", classifier=None):
         all_model_list, all_acc_list, all_fidelity_list = [], [], []
         for seed, model_arch in enumerate(setting_cfg["model_arches"]):
             model_list, acc_list, fidelity_list = self.train_models_by_arch(setting_cfg, model_arch, model_save_root, seed, mask_model_save_name,
-                                                                       mask_model=mask_model, stage=stage, process=process)
+                                                                       mask_model=mask_model, stage=stage, process=process, classifier=classifier)
             all_model_list += model_list
             all_acc_list.append(acc_list)
 
@@ -379,6 +294,7 @@ class GNNVerification():
                 all_fidelity_list.append(fidelity_list)
 
         return all_model_list, all_acc_list, all_fidelity_list
+
 
     def run_single_experiment(self, n_run):
         save_json = {}
@@ -400,7 +316,7 @@ class GNNVerification():
 
         # train independent model
         train_inde_model_list, train_inde_acc_list, _ = self.train_models_by_setting(self.train_setting_cfg, self.train_save_root,
-                                                                          mask_model=None, stage="train")
+                                                                          mask_model=None, stage="train", process='train')
         # train surrogate model
         train_surr_model_list, train_surr_acc_list, train_surr_fidelity_list = self.train_models_by_setting(self.train_setting_cfg,
                                                                                                  self.train_save_root, self.mask_model_save_name,
@@ -413,7 +329,6 @@ class GNNVerification():
             train_prob_list.append(outputs)
             train_logits_list.append([mask_logits["independent"], logits["independent"], logits["surrogate"]])
             train_embedding_list.append([mask_embedding["independent"], embedding["independent"], embedding["surrogate"]])
-
         train_clf_start = time.time()
         classifier_model = train_original_classifier(train_prob_list)
         # classifier_model = train_k_fold(pair_list)
@@ -421,11 +336,11 @@ class GNNVerification():
 
         # train independent  model
         test_inde_model_list, test_inde_acc_list, _ = self.train_models_by_setting(self.test_setting_cfg,  self.train_save_root,
-                                                                      mask_model=None, stage="test")
+                                                                      mask_model=None, stage="test", process='train')
         # train surrogate model
         test_surr_model_list, test_surr_acc_list, test_surr_fidelity_list = self.train_models_by_setting(
                                                                     self.test_setting_cfg, self.test_save_root,
-                                                                    self.mask_model_save_name, self.mask_model, stage="test", process=self.global_cfg["test_process"])
+                                                                    self.mask_model_save_name, self.mask_model, stage="test", process=self.global_cfg["test_process"]) # classifier=classifier_model
         test_logits_list, test_embedding_list = [], []
         TN, FP, FN, TP = 0, 0, 0, 0
         for test_independent_model, test_extraction_model in zip(test_inde_model_list, test_surr_model_list):
@@ -484,27 +399,27 @@ class GNNVerification():
         with open("{}/test_setting.yaml".format(json_save_root), "w") as f:
             yaml.dump(self.test_setting_cfg, f, default_flow_style=False)
 
-        if n_run == 0:
-            torch.save(train_embedding_list,
-                       os.path.join(json_save_root, "{}_train_embedding.pkl".format(self.mask_model_save_name)))
-            torch.save(test_embedding_list,
-                       os.path.join(json_save_root, "{}_test_embedding.pkl".format(self.mask_model_save_name)))
+        # if n_run == 0:
+        #     torch.save(train_embedding_list,
+        #                os.path.join(json_save_root, "{}_train_embedding.pkl".format(self.mask_model_save_name)))
+        #     torch.save(test_embedding_list,
+        #                os.path.join(json_save_root, "{}_test_embedding.pkl".format(self.mask_model_save_name)))
 
-            torch.save(train_logits_list,
-                       os.path.join(json_save_root, "{}_train_logits.pkl".format(self.mask_model_save_name)))
-            torch.save(test_logits_list,
-                       os.path.join(json_save_root, "{}_test_logits.pkl".format(self.mask_model_save_name)))
+        #     torch.save(train_logits_list,
+        #                os.path.join(json_save_root, "{}_train_logits.pkl".format(self.mask_model_save_name)))
+        #     torch.save(test_logits_list,
+        #                os.path.join(json_save_root, "{}_test_logits.pkl".format(self.mask_model_save_name)))
 
         # print("Total Time:{}",save_json["total_time"])
         # print("Train classifier time:{}, Total time:{}, ratio:{}".format(train_clf_time, save_json["total_time"], train_clf_time/save_json["total_time"]))
 
         return TP, FN, TN, FP
 
+
 def multiple_experiments(args, global_cfg):
 
     config_path = "../config"
   
-    # ['dblp', 'citeseer_full', 'pubmed', 'coauthor_phy', 'acm', 'amazon_photo']
     target_arch_list = ["gat", "gcn", "sage"]
     # target_arch_list = ["gat"]
     target_hidden_dim_list = [[352, 128],[288, 128],[224, 128]]
@@ -539,6 +454,7 @@ def multiple_experiments(args, global_cfg):
 
             gnn_verification = GNNVerification(args, global_cfg, train_setting_cfg, test_setting_cfg)
             gnn_verification.run_single_experiment(n_run)
+
 
 if __name__ == '__main__':
     from utils.config import parse_args

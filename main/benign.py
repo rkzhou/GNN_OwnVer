@@ -9,9 +9,10 @@ from utils.graph_operator import split_subgraph
 from tqdm import tqdm
 from utils.config import parse_args
 from pathlib import Path
+import random
 
 
-def transductive_train(args, model_save_path, graph_data):
+def transductive_train(args, model_save_path, graph_data, process):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -49,13 +50,21 @@ def transductive_train(args, model_save_path, graph_data):
         optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr)
 
         last_train_acc = 0.0
+        if process == 'test':
+            train_nodes_index = [i for i in range(gdata.node_num)]
+            random.shuffle(train_nodes_index)
+            train_nodes_index = train_nodes_index[:len(gdata.target_nodes_index)]
+        
         for epoch in range(args.benign_train_epochs):
             gnn_model.train()
             optimizer.zero_grad()
             input_data = gdata.features.to(device), gdata.adjacency.to(device)
             labels = gdata.labels.to(device)
             _, output = gnn_model(input_data)
-            loss = loss_fn(output[gdata.target_nodes_index], labels[gdata.target_nodes_index])
+            if process == 'test':
+                loss = loss_fn(output[train_nodes_index], labels[train_nodes_index])
+            else:
+                loss = loss_fn(output[gdata.target_nodes_index], labels[gdata.target_nodes_index])
             loss.backward()
             optimizer.step()
 
@@ -63,8 +72,12 @@ def transductive_train(args, model_save_path, graph_data):
             if (epoch + 1) % 50 == 0:
                 _, output = gnn_model(input_data)
                 pred = predict_fn(output)
-                train_pred = pred[gdata.target_nodes_index]
-                train_labels = gdata.labels[gdata.target_nodes_index]
+                if process == 'test':
+                    train_pred = pred[train_nodes_index]
+                    train_labels = gdata.labels[train_nodes_index]
+                else:
+                    train_pred = pred[gdata.target_nodes_index]
+                    train_labels = gdata.labels[gdata.target_nodes_index]
                 
                 for i in range(train_pred.shape[0]):
                     if train_pred[i, 0] == train_labels[i]:
@@ -98,7 +111,7 @@ def transductive_train(args, model_save_path, graph_data):
     return gdata, gnn_model, save_test_acc
 
 
-def inductive_train(args, model_save_path, graph_data):
+def inductive_train(args, model_save_path, graph_data, process):
     if torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -134,6 +147,24 @@ def inductive_train(args, model_save_path, graph_data):
         optimizer = torch.optim.Adam(gnn_model.parameters(), lr=args.benign_lr)
 
         last_train_acc = 0.0
+
+        if process == 'test':
+            train_nodes_index = [i for i in range(gdata.node_num)]
+            random.shuffle(train_nodes_index)
+            temp_target_nodes_index = train_nodes_index[:len(gdata.target_nodes_index)]
+            temp_shadow_nodes_index = train_nodes_index[len(gdata.target_nodes_index):len(gdata.target_nodes_index)+len(gdata.shadow_nodes_index)]
+            temp_real_nodes_index = train_nodes_index[len(gdata.target_nodes_index)+len(gdata.shadow_nodes_index):len(gdata.target_nodes_index)+len(gdata.shadow_nodes_index)+len(gdata.attacker_nodes_index)]
+            temp_test_nodes_index = train_nodes_index[len(gdata.target_nodes_index)+len(gdata.shadow_nodes_index)+len(gdata.attacker_nodes_index):]
+            
+            temp_gdata = copy.deepcopy(gdata)
+            temp_gdata.target_nodes_index = temp_target_nodes_index
+            temp_gdata.shadow_nodes_index = temp_shadow_nodes_index
+            temp_gdata.attacker_nodes_index = temp_real_nodes_index
+            temp_gdata.test_nodes_index = temp_test_nodes_index
+
+            target_graph_data, _, _, _ = split_subgraph(temp_gdata)
+
+
         for epoch in range(args.benign_train_epochs):
             gnn_model.train()
             optimizer.zero_grad()
@@ -201,13 +232,13 @@ def get_possibility_variance(graph_data, gnn_model, measure_nodes):
     return variance
 
 
-def run(args, model_save_path, given_graph_data=None):
+def run(args, model_save_path, given_graph_data=None, process=None):
 
     if args.task_type == 'transductive':
-        graph_data, gnn_model, test_acc = transductive_train(args, model_save_path, given_graph_data)
+        graph_data, gnn_model, test_acc = transductive_train(args, model_save_path, given_graph_data, process)
         return graph_data, gnn_model, test_acc
     elif args.task_type == 'inductive':
-        graph_data, gnn_model, test_acc = inductive_train(args, model_save_path, given_graph_data) # multiple graph data
+        graph_data, gnn_model, test_acc = inductive_train(args, model_save_path, given_graph_data, process) # multiple graph data
         return graph_data, gnn_model, test_acc
 
 

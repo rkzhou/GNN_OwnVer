@@ -1,6 +1,6 @@
 target_model: gat
 target_hidden_dims: [352, 256]
-dataset: PubMed
+dataset: Cora
 train_setting: 1
 test_setting: 1
 embedding_dim: 128

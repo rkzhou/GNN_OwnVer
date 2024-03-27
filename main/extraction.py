@@ -22,6 +22,54 @@ class Classification(torch.nn.Module):
         return F.log_softmax(self.fc2(x), dim=1)
 
 
+def extract_outputs(graph_data, specific_nodes, independent_model, surrogate_model):
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+    
+    independent_model.eval()
+    surrogate_model.eval()
+    
+    input_data = graph_data.features.to(device), graph_data.adjacency.to(device)
+    independent_embedding, independent_logits = independent_model(input_data)
+    surrogate_embedding, surrogate_logits = surrogate_model(input_data)
+
+    softmax = torch.nn.Softmax(dim=1)
+    independent_prob = softmax(independent_logits)
+    surrogate_prob = softmax(surrogate_logits)
+
+    if specific_nodes != None:
+        independent_prob = independent_prob[specific_nodes].cpu()
+        surrogate_prob = surrogate_prob[specific_nodes].cpu()
+        independent_embedding = independent_embedding[specific_nodes].cpu()
+        surrogate_embedding = surrogate_embedding[specific_nodes].cpu()
+        independent_logits = independent_logits[specific_nodes].cpu()
+        surrogate_logits = surrogate_logits[specific_nodes].cpu()
+
+    probability = {'independent': independent_prob, 'surrogate': surrogate_prob}
+    embedding = {'independent': independent_embedding, 'surrogate': surrogate_embedding}
+    logits = {'independent': independent_logits, 'surrogate': surrogate_logits}
+
+    return probability, logits, embedding
+
+
+def verify(suspicious_logits, verifier_model):
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
+
+    distance = torch.flatten(suspicious_logits).view(1, -1)
+
+    verifier_model.to(device)
+    verifier_model.eval()
+
+    outputs = verifier_model(distance.to(device))
+
+    return outputs
+
+
 def evaluate_target_response(args, graph_data, model, response, process):
     if torch.cuda.is_available():
         device = torch.device('cuda')
@@ -80,7 +128,7 @@ def evaluate_target_response(args, graph_data, model, response, process):
     return target_response
 
 
-def train_extraction_model(args, model_save_path, data, process):
+def train_extraction_model(args, model_save_path, data, process, classifier):
     clf_save_path = model_save_path + '_clf.pt'
     graph_data, train_emb, train_outputs, test_outputs = data
     softmax = torch.nn.Softmax(dim=1)
@@ -172,6 +220,13 @@ def train_extraction_model(args, model_save_path, data, process):
                 elif args.extraction_method == 'black_box':
                     optimizer_medium.zero_grad()
                     loss = loss_fn(part_outputs, train_outputs)
+                    if process == 'test' and classifier != None:
+                        surrogate_outputs, _, _ = extract_outputs(graph_data, graph_data.target_nodes_index, extraction_model, extraction_model)
+                        classify_logits = verify(surrogate_outputs["surrogate"], classifier)
+                        classify_logits = torch.flatten(classify_logits)
+                        evade_loss = loss_fn(classify_logits, torch.tensor(0).to(device))
+                        loss += 10 * evade_loss
+
                     loss.backward()
                     optimizer_medium.step()
 
@@ -334,12 +389,12 @@ def train_extraction_model(args, model_save_path, data, process):
     return extraction_model, clf, save_acc, save_fide
 
 
-def run(args, model_save_path, graph_data, original_model, process):
+def run(args, model_save_path, graph_data, original_model, process, classifier):
     train_emb = evaluate_target_response(args, graph_data, original_model, 'train_embeddings', process) # we do not use this in black-box extraction setting
     train_outputs = evaluate_target_response(args, graph_data, original_model, 'train_outputs', process)
     test_outputs = evaluate_target_response(args, graph_data, original_model, 'test_outputs', process)
     extraction_data = graph_data, train_emb, train_outputs, test_outputs
-    extraction_model, _, extraction_acc, extraction_fide = train_extraction_model(args, model_save_path, extraction_data, process)
+    extraction_model, _, extraction_acc, extraction_fide = train_extraction_model(args, model_save_path, extraction_data, process, classifier)
 
     return extraction_model, extraction_acc, extraction_fide
 

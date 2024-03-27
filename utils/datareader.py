@@ -42,6 +42,7 @@ class GraphData(torch.utils.data.Dataset):
             source_node = self.adjacency[0][i]
             target_node = self.adjacency[1][i]
             self.adj_matrix[source_node, target_node] = 1
+            self.adj_matrix[target_node, source_node] = 1
     
     def get_class_num(self):
         labels = self.labels.tolist()
@@ -77,7 +78,7 @@ class GraphData(torch.utils.data.Dataset):
         return self.node_num
     
     def __getitem__(self, index):
-        return [self.features[index], self.adj_matrix[index], self.labels[index]]
+        return 0
 
 
 class VarianceData(torch.utils.data.Dataset):
