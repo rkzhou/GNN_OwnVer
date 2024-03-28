@@ -1,14 +1,24 @@
 # Revisiting Black-box Ownership Verification for Graph Neural Networks
 
-This paper will appear in IEEE Symposium on Security and Privacy 2024.
+Paper title: Revisiting Black-box Ownership Verification for Graph Neural Networks
+
+This paper will appear in IEEE Symposium on Security and Privacy 2024. 
 
 This repo contains code that allows you to reproduce experiments presented in the paper.
 
 ## Environment Setup
 
-All third-party packages used in the code can be easily installed by pip or anaconda.
+Opearting system: Ubuntu 22.04.4 LTS
 
-Package list:
+CPU: Intel i9-12900K
+
+Graphics card: RTX 4090
+
+RAM: 64GB
+
+CUDA version: 11.8
+
+You need to install some third-party libraries with the following commands:
 
 ```
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
@@ -20,14 +30,19 @@ pip install pyyaml
 pip install argparse
 ```
 
-## File Helper
-
-In this section, we will introduce some parameters inside files.
+## File Illustration
 
 ### In "config" Folder:
-
-1. global_cfg.yaml:
-- dataset: the graph dataset
+1. global_cfg.yaml: 
+- target_model: the architecture of target model. Valid values: [gcn, gat, sage]
+- target_hidden_dims: hidden layer dimension of target model. Valid values: [[352, 128],[288, 128],[224, 128]]
+- dataset: the graph dataset. Valid values: [Cora, Citeseer, Amazon, DBLP, PubMed]
+- train_setting: the setting file for training local models. Valid values: fixed.
+- test_setting: the setting file for training real models. Valid values: [1, 2, 3, 4]
+- embedding_dim: the additional last layer in local and real models, used for reproducing Grove white-box method. Valid values: fixed.
+- train_process: train local models. Valid values: fixed.
+- test_process: train real models. Valid values: fixed.
+- n_run: the repeating number of verification experiments. Valid values: can be any number, set for 3 in our paper.
 - train_save_root: the saving path for the training models in ownership verification.
 - test_save_root: the saving path for the testing models in ownership verification.
 - res_path: the saving path for the ownership verification results.
@@ -84,3 +99,5 @@ Set the corresponding parameters mentioned above and run the base experiment aga
 ## Results Viewing
 
 All models and results will be saved in the path you set in the "global_cfg.yaml" file.
+
+## Citation
