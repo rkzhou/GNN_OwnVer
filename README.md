@@ -78,4 +78,9 @@ python robustness.py
 Set the corresponding parameters mentioned above and run the base experiment again.
 
 ### Adaptive Attacks
+
 Set the corresponding parameters mentioned above and run the base experiment again.
+
+## Results Viewing
+
+All models and results will be saved in the path you set in the "global_cfg.yaml" file.
