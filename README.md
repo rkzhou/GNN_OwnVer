@@ -136,7 +136,7 @@ After setting corresponding parameters in configurations, you can directly run t
 python robustness.py
 ```
 
-### Adaptive Attacks
+### Adaptive Attacks (See Section 6.4)
 
 Inside "train_models_by_setting" function in "verification_cfg.py": set "classifier" parameter to "classifier_model".
 
@@ -144,7 +144,7 @@ Inside "train_models_by_setting" function in "verification_cfg.py": set "classif
 python main.py
 ```
 
-## Results Viewing (See Section 6.4)
+## Results Viewing
 
 All models and results will be saved in the path you set in the "global_cfg.yaml" file.
 
