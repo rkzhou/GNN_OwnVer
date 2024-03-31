@@ -130,10 +130,16 @@ To run all three robustness techniques, you need to pass the saving path of real
 
 Besides, for the prune robustness experiment, you need to set the magnitude of prune.
 
-After setting corresponding parameters in configurations, you can directly run the "robustness.py" file under the "main" folder.
+After setting corresponding parameters in configurations, you can directly run the "robustness.py" file under the "main" folder to get real test models after robustness techniques.
 
 ```
 python robustness.py
+```
+
+And then you should change the "test_save_root" parameter to the path where you saved the real test models after robustness techniques and run the ownership verification experiment again.
+
+```
+python main.py
 ```
 
 ### Adaptive Attacks (See Section 6.4)
