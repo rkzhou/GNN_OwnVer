@@ -178,10 +178,10 @@ Inside the file:
 ## Citation
 If you find several components of this work useful or want to use this code in your research, please cite the following paper:
 @inproceedings{zhou2024revisiting,\
-  title={Revisiting Black-box Ownership Verification for Graph Neural Networks},\
-  author={Zhou, Ruikai and Yang, Kang and Wang, Xiuling and Wang, Wendy Hui and Xu, Jun},\
-  booktitle={2024 IEEE Symposium on Security and Privacy (SP)},\
-  pages={210--210},\
-  year={2024},\
-  organization={IEEE Computer Society}\
+  &nbsp;title={Revisiting Black-box Ownership Verification for Graph Neural Networks},\
+  &nbsp;author={Zhou, Ruikai and Yang, Kang and Wang, Xiuling and Wang, Wendy Hui and Xu, Jun},\
+  &nbsp;booktitle={2024 IEEE Symposium on Security and Privacy (SP)},\
+  &nbsp;pages={210--210},\
+  &nbsp;year={2024},\
+  &nbsp;organization={IEEE Computer Society}\
 }
