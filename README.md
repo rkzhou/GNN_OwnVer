@@ -177,11 +177,11 @@ Inside the file:
 - mask_run_time: masking running time.
 ## Citation
 If you find several components of this work useful or want to use this code in your research, please cite the following paper:
-@inproceedings{zhou2024revisiting,
-  title={Revisiting Black-box Ownership Verification for Graph Neural Networks},
-  author={Zhou, Ruikai and Yang, Kang and Wang, Xiuling and Wang, Wendy Hui and Xu, Jun},
-  booktitle={2024 IEEE Symposium on Security and Privacy (SP)},
-  pages={210--210},
-  year={2024},
-  organization={IEEE Computer Society}
+@inproceedings{zhou2024revisiting,\
+  title={Revisiting Black-box Ownership Verification for Graph Neural Networks},\
+  author={Zhou, Ruikai and Yang, Kang and Wang, Xiuling and Wang, Wendy Hui and Xu, Jun},\
+  booktitle={2024 IEEE Symposium on Security and Privacy (SP)},\
+  pages={210--210},\
+  year={2024},\
+  organization={IEEE Computer Society}\
 }
